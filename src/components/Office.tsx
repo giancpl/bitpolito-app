@@ -36,7 +36,9 @@ export function RequestBanner() {
   if (!user || !active) return null;
   return (
     <Link className="moo-banner" to={`/moo?request=${active.id}`}>
-      <Bell size={20} />
+      <span className="banner-bell" aria-hidden="true">
+        <Bell size={18} />
+      </span>
       <span>
         <strong>{requestTitle(active, user.id)}</strong>
         <small>View request</small>
@@ -84,9 +86,11 @@ export function OfficePage() {
     [error, setError] = useState("");
   const resources = useResources(home);
   const latest = query.data?.own;
+  const latestId = latest?.id;
+  const latestEnded = !!latest && !isLive(latest);
   useEffect(() => {
-    if (latest && !isLive(latest)) sessionStorage.removeItem(RING_KEY);
-  }, [latest?.id, latest?.status]);
+    if (latestEnded) sessionStorage.removeItem(RING_KEY);
+  }, [latestId, latestEnded]);
   if (!user) return null;
   if (!query.data)
     return query.error ? (
@@ -257,7 +261,7 @@ export function OfficePage() {
         <h2>At the office</h2>
         <span className="pill">Torino</span>
       </div>
-      <div className="presence-bar">
+      <div className={`presence-bar ${inside ? "is-inside" : "is-outside"}`}>
         <StatusBadge inside={inside} />
         {inside ? (
           <Button variant="secondary" disabled={!!busy} busy={busy === "presence"} onClick={leave}>
@@ -323,7 +327,11 @@ export function OfficePage() {
             {home ? `Hi, ${user.name || "teammate"}.` : requestPage ? "Door request" : "Office"}
           </h1>
         </div>
-        {home && <img src="/brand/cow-icon-blue.svg" alt="" />}
+        {home && (
+          <span className="brand-badge" aria-hidden="true">
+            <img src="/brand/cow-icon-blue.svg" alt="" />
+          </span>
+        )}
       </div>
       {query.error && (
         <Notice>
@@ -380,7 +388,9 @@ export function OfficePage() {
           </div>
           <div className="quick-tool-grid">
             <Link className="quick-tool" to="/office">
-              <img src="/brand/icon-bell.svg" alt="" />
+              <span className="quick-tool-icon" aria-hidden="true">
+                <img src="/brand/icon-bell.svg" alt="" />
+              </span>
               <strong>Office</strong>
               <span>Presence & doorbell</span>
             </Link>
@@ -389,7 +399,9 @@ export function OfficePage() {
               .slice(0, 3)
               .map((r) => (
                 <a className="quick-tool" key={r.id} href={r.url} target="_blank" rel="noreferrer">
-                  <img src={`/brand/${r.icon}`} alt="" />
+                  <span className="quick-tool-icon" aria-hidden="true">
+                    <img src={`/brand/${r.icon}`} alt="" />
+                  </span>
                   <strong>{r.title}</strong>
                   <span>{r.category}</span>
                 </a>

@@ -36,13 +36,15 @@ export function AdministrationPage() {
   );
 }
 export function Administration() {
-  const confirm = useConfirm(),
+  const { user: currentUser } = useIdentity(),
+    confirm = useConfirm(),
     toast = useToast();
   const client = useQueryClient();
   const [tab, setTab] = useState("invites"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [link, setLink] = useState(""),
+    [inviteFormKey, setInviteFormKey] = useState(0),
     [editor, setEditor] = useState<Resource | "new" | null>(null);
   const invites = useQuery({ queryKey: keys.invites, queryFn: team.invites }),
     members = useQuery({ queryKey: keys.members, queryFn: team.members }),
@@ -92,10 +94,12 @@ export function Administration() {
           {tab === "invites" ? (
             <>
               <AsyncForm
+                key={inviteFormKey}
                 submitLabel="Create invitation"
                 onSubmit={async (data) => {
                   const result = await team.createInvite(String(data.get("label")));
                   setLink(inviteLink(result.token));
+                  setInviteFormKey((k) => k + 1);
                   toast("Invitation created. Share it personally.");
                   await client.invalidateQueries({ queryKey: keys.invites });
                 }}
@@ -134,6 +138,8 @@ export function Administration() {
                 <Loading />
               ) : invites.error ? (
                 <ErrorState error={invites.error} retry={() => void invites.refetch()} />
+              ) : invites.data?.length === 0 ? (
+                <p className="small muted">No invitations yet.</p>
               ) : (
                 <div className="admin-rows">
                   {invites.data?.map((i) => (
@@ -188,7 +194,10 @@ export function Administration() {
                 {members.data?.map((u) => (
                   <div key={u.id}>
                     <div>
-                      <strong>{u.name || "Unnamed identity"}</strong>
+                      <strong>
+                        {u.name || "Unnamed identity"}
+                        {u.id === currentUser?.id ? " (you)" : ""}
+                      </strong>
                       <code>
                         {u.id.slice(0, 8)}…{u.id.slice(-4)}
                       </code>

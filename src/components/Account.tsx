@@ -157,7 +157,20 @@ export function AccountPage() {
               <SettingsRow
                 icon={<LogOut size={20} />}
                 label="Sign out"
-                onClick={() => void run(identity.logout)}
+                onClick={() =>
+                  void run(async () => {
+                    if (
+                      !(await confirm({
+                        title: "Sign out of BitPolito?",
+                        description:
+                          "Office alerts will stop on this phone until you sign in and check in again.",
+                        action: "Sign out",
+                      }))
+                    )
+                      return;
+                    await identity.logout();
+                  })
+                }
               />
             </div>
           </>

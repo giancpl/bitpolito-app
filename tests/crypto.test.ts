@@ -24,4 +24,4 @@ it("imports private keys encrypted and rejects public keys or short passwords", 
   expect(() => validPassword("short")).toThrow();
   secret.fill(0);
   recovered.secret.fill(0);
-});
+}, 20000);

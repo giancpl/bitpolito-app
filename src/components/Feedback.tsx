@@ -26,9 +26,10 @@ export const useToast = () => useContext(ToastContext);
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [viewport, setViewport] = useState<{ height: number; top: number }>();
+  const hasConfirmation = !!confirmation;
   useEffect(() => {
     const visual = window.visualViewport;
-    if (!confirmation || !visual) return;
+    if (!hasConfirmation || !visual) return;
     const update = () => setViewport({ height: visual.height, top: visual.offsetTop });
     update();
     visual.addEventListener("resize", update);
@@ -37,7 +38,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       visual.removeEventListener("resize", update);
       visual.removeEventListener("scroll", update);
     };
-  }, [!!confirmation]);
+  }, [hasConfirmation]);
   const pending = useRef<((answer: boolean) => void) | null>(null);
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const confirm = useCallback((options: Confirmation | string) => {

@@ -46,6 +46,7 @@ test("invitation requires approval, and profile keeps recovery one step away", a
   await alice.goto("/account/admin");
   await alice.getByLabel("Who is this invitation for?").fill("Drew");
   await alice.getByRole("button", { name: "Create invitation", exact: true }).click();
+  await expect(alice.getByLabel("Who is this invitation for?")).toHaveValue("");
   const invitation = await alice.getByLabel("Invitation link", { exact: true }).inputValue();
   await login(drew, "Drew");
   await drew.getByLabel("Invitation link or code").fill(invitation);
@@ -58,6 +59,9 @@ test("invitation requires approval, and profile keeps recovery one step away", a
     .click();
   await expect(drew.getByRole("heading", { name: "Hi, Drew." })).toBeVisible();
   await drew.getByRole("link", { name: "Profile", exact: true }).click();
+  await drew.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(drew.getByRole("alertdialog")).toBeVisible();
+  await drew.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
   await drew.getByRole("button", { name: "Identity & recovery", exact: true }).click();
   await expect(drew.getByText("Private history is not included.", { exact: false })).toBeVisible();
 });
@@ -97,9 +101,15 @@ test("an incoming door request is the first thing a responder sees", async ({ co
   ]);
   expect(requestBox!.y).toBeLessThan(summaryBox!.y);
   await expect(alice.getByLabel(/Expires in/)).toBeVisible();
+  await alice.getByRole("link", { name: "Tools", exact: true }).click();
+  const banner = alice.getByRole("link", { name: /Cara is at the door/ });
+  await expect(banner).toBeVisible();
+  await banner.click();
+  await expect(alice).toHaveURL(/\/moo\?request=/);
+  await expect(alice.getByRole("heading", { name: "Cara is at the door" })).toBeVisible();
 });
 
-test("dark theme keeps text readable without layout shifts", async ({ browser }) => {
+test("light theme stays consistent even when the system prefers dark mode", async ({ browser }) => {
   const context = await browser.newContext({
     colorScheme: "dark",
     viewport: { width: 390, height: 844 },
@@ -108,9 +118,15 @@ test("dark theme keeps text readable without layout shifts", async ({ browser })
   await login(page, "Alice");
   const colors = await page.evaluate(() => {
     const body = getComputedStyle(document.body);
-    return { background: body.backgroundColor, color: body.color };
+    const tip = document.querySelector(".context-tip");
+    return {
+      background: body.backgroundColor,
+      color: body.color,
+      tipBackground: tip ? getComputedStyle(tip).backgroundColor : null,
+    };
   });
-  expect(colors.background).not.toBe("rgb(247, 248, 252)");
+  expect(colors.background).toBe("rgb(249, 249, 249)");
+  expect(colors.tipBackground).toBe("rgb(255, 255, 255)");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

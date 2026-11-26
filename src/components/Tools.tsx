@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 import { useResources } from "../lib/queries";
 import { Empty, ErrorState, ExpandableText, ExternalLink, Loading } from "./ui";
 export function ResourcesPage() {
@@ -7,19 +8,21 @@ export function ResourcesPage() {
     <>
       <div className="page-intro">
         <div>
-          <h1>
+          <h1 tabIndex={-1}>
             Tools<span>.</span>
           </h1>
           <p>Your BitPolito toolkit.</p>
         </div>
       </div>
       <Link className="tool-office-link" to="/office">
-        <img src="/brand/icon-bell.svg" alt="" />
+        <div className="resource-icon">
+          <img src="/brand/icon-bell.svg" alt="" />
+        </div>
         <span>
           <strong>Office</strong>
           <small>Presence & doorbell</small>
         </span>
-        <span aria-hidden="true">→</span>
+        <ChevronRight size={18} className="muted" aria-hidden="true" />
       </Link>
       {query.isLoading ? (
         <Loading />

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useBlocker, useLocation } from "react-router-dom";
 import { Grid2X2, House, UserRound } from "lucide-react";
 import { hubEnabled } from "./lib/hub";
@@ -22,6 +22,8 @@ const IdentityDialog = lazy(() =>
 function UnsavedChangesGuard() {
   const confirm = useConfirm();
   const blocker = useBlocker(() => !!document.querySelector('form[data-dirty="true"]'));
+  const blockerRef = useRef(blocker);
+  blockerRef.current = blocker;
   useEffect(() => {
     if (blocker.state !== "blocked") return;
     let active = true;
@@ -32,8 +34,8 @@ function UnsavedChangesGuard() {
       danger: true,
     }).then((discard) => {
       if (!active) return;
-      if (discard) blocker.proceed();
-      else blocker.reset();
+      if (discard) blockerRef.current.proceed?.();
+      else blockerRef.current.reset?.();
     });
     return () => {
       active = false;
@@ -95,7 +97,7 @@ export default function App() {
     sessionStorage.removeItem("bitpolito.invite");
     if (window.location.hash)
       history.replaceState(null, "", window.location.pathname + window.location.search);
-  }, [member]);
+  }, [member, invite]);
 
   const section = sectionTitle(location.pathname);
   useEffect(() => {

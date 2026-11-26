@@ -68,9 +68,10 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("bitpolito:resume", check);
     };
   }, []);
+  const signedOut = !!me.data && !me.data.user;
   useEffect(() => {
-    if (me.data && !me.data.user) lock();
-  }, [me.data?.user?.id]);
+    if (signedOut) lock();
+  }, [signedOut]);
 
   async function resetSession() {
     client.removeQueries({ predicate: (query) => query.queryKey[0] !== "me" });

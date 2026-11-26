@@ -165,7 +165,7 @@ export function Modal({
                       previous.current !== document.body &&
                       previous.current !== document.documentElement
                         ? previous.current
-                        : document.querySelector<HTMLElement>(".profile-link");
+                        : document.querySelector<HTMLElement>("main h1, .bottom-nav a.active");
                     target?.focus({ preventScroll: true });
                   }}
                 >

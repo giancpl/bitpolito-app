@@ -119,7 +119,7 @@ export function AndroidNotifications() {
         {heard > 0 && (
           <p className="small muted">Last confirmed: {new Date(heard).toLocaleString("en-GB")}</p>
         )}
-        <label className="checkbox">
+        <label className="checkbox-label is-centered">
           <input
             type="checkbox"
             checked={device.data?.vibration || false}

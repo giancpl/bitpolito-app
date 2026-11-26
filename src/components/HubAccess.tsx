@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Hourglass, WifiOff } from "lucide-react";
@@ -23,6 +23,12 @@ export function HubAccess({ invite }: { invite: string }) {
     [token, setToken] = useState(invite),
     [busy, setBusy] = useState(false),
     [editingInvite, setEditingInvite] = useState(false);
+  useEffect(() => {
+    if (invite) {
+      setToken(invite);
+      setEditingInvite(false);
+    }
+  }, [invite]);
   const status = useQuery({
     queryKey: keys.joinStatus,
     queryFn: team.joinStatus,
@@ -77,7 +83,9 @@ export function HubAccess({ invite }: { invite: string }) {
 
   return (
     <section className="member-welcome">
-      <img src="/brand/loving-cows-blue.svg" alt="Two BitPolito cows" />
+      <div className="welcome-emblem">
+        <img src="/brand/loving-cows-blue.svg" alt="Two BitPolito cows" />
+      </div>
       <span className="eyebrow">BitPolito Hub</span>
       <h1>
         {waiting
