@@ -3,16 +3,30 @@ package it.bitpolito.hub;
 import android.content.Intent;
 import android.os.Bundle;
 import androidx.activity.OnBackPressedCallback;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
   private String pendingRequest;
 
+  private void applyLightSystemBars() {
+    WindowInsetsControllerCompat insets =
+        WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+    if (insets != null) {
+      insets.setAppearanceLightStatusBars(true);
+      insets.setAppearanceLightNavigationBars(true);
+    }
+  }
+
   @Override
   public void onCreate(Bundle state) {
+    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
     registerPlugin(BitPolitoPlugin.class);
     registerPlugin(HubPlugin.class);
     super.onCreate(state);
+    applyLightSystemBars();
     Alerts.channels(this);
     getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
       public void handleOnBackPressed() {
@@ -24,6 +38,7 @@ public class MainActivity extends BridgeActivity {
   @Override
   public void onResume() {
     super.onResume();
+    applyLightSystemBars();
     Alerts.foreground = true;
     HubRuntime.get(this).setVisible(true);
     HubRuntime.get(this).startSync();

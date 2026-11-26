@@ -6,5 +6,10 @@ const config: CapacitorConfig = {
   loggingBehavior: "none",
   server: { androidScheme: "https" },
   android: { allowMixedContent: false },
+  plugins: {
+    SystemBars: {
+      style: "LIGHT",
+    },
+  },
 };
 export default config;

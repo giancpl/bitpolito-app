@@ -105,7 +105,7 @@ Code layout:
 - `android/app/src/main/java/it/bitpolito/hub/` — the native runtime
   (`HubRuntime`), Capacitor bridges and the office listener service.
 
-The interface follows the phone's light or dark theme. CI (`.github/workflows/ci.yml`)
+The interface uses a clean light theme built around BitPolito electric blue and light surfaces. CI (`.github/workflows/ci.yml`)
 runs the web checks, the simulator workflows and the Android sandbox build with
 its JVM tests on every pull request.
 
