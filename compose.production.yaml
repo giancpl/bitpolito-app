@@ -1,0 +1,41 @@
+# Archived server/PWA installation only. The distributed Android APK does not use this backend configuration.
+# Separate deployment; do not layer this over compose.yaml.
+services:
+  app:
+    build: .
+    environment:
+      APP_ORIGIN: https://${DOMAIN:?Set DOMAIN in .env.production}
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: "true"
+      RELAY_URLS: ${RELAY_URLS-wss://nrs.primal.net}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:?Generate VAPID keys first}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?Generate VAPID keys first}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:?Set a contact mailto address}
+    volumes:
+      - hub-data:/app/data
+    restart: unless-stopped
+    networks: [hub]
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [hub]
+networks:
+  hub:
+volumes:
+  hub-data:
+  caddy-data:
+  caddy-config:
