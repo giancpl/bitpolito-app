@@ -15,12 +15,14 @@ import {
   type ReactNode,
   type ButtonHTMLAttributes,
   type FormEvent,
+  type SyntheticEvent,
   type CSSProperties,
 } from "react";
 import {
   X,
   ArrowUpRight,
   AlertCircle,
+  Info,
   LoaderCircle,
   RefreshCw,
   MoreHorizontal,
@@ -73,9 +75,7 @@ export function Modal({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const previous = useRef<HTMLElement | null>(
-    document.activeElement as HTMLElement | null,
-  );
+  const previous = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
   const [shown, setShown] = useState(true);
   const [viewport, setViewport] = useState<{ height: number; top: number }>();
   useEffect(() => {
@@ -85,10 +85,7 @@ export function Modal({
       setViewport({ height: visual.height, top: visual.offsetTop });
       requestAnimationFrame(() => {
         const focused = document.activeElement as HTMLElement | null;
-        if (
-          focused?.matches("input,textarea,select") &&
-          ref.current?.contains(focused)
-        )
+        if (focused?.matches("input,textarea,select") && ref.current?.contains(focused))
           focused.scrollIntoView({ block: "nearest" });
       });
     };
@@ -159,17 +156,16 @@ export function Modal({
                   forceMount
                   onOpenAutoFocus={(e) => {
                     e.preventDefault();
-                    ref.current
-                      ?.querySelector<HTMLElement>(".modal-close")
-                      ?.focus();
+                    ref.current?.querySelector<HTMLElement>(".modal-close")?.focus();
                   }}
                   onCloseAutoFocus={(e) => {
                     e.preventDefault();
-                    const target = previous.current?.isConnected &&
+                    const target =
+                      previous.current?.isConnected &&
                       previous.current !== document.body &&
                       previous.current !== document.documentElement
-                      ? previous.current
-                      : document.querySelector<HTMLElement>(".profile-link");
+                        ? previous.current
+                        : document.querySelector<HTMLElement>(".profile-link");
                     target?.focus({ preventScroll: true });
                   }}
                 >
@@ -192,11 +188,8 @@ export function Modal({
                         <X size={22} />
                       </button>
                     </div>
-                    <Dialog.Description
-                      className={description ? "modal-description" : "sr-only"}
-                    >
-                      {description ||
-                        `${title}. Close or press Escape to return.`}
+                    <Dialog.Description className={description ? "modal-description" : "sr-only"}>
+                      {description || `${title}. Close or press Escape to return.`}
                     </Dialog.Description>
                     {children}
                   </motion.div>
@@ -210,35 +203,21 @@ export function Modal({
   );
 }
 
-export function Avatar({
-  name,
-  small = false,
-}: {
-  name: string;
-  small?: boolean;
-}) {
+export function Avatar({ name, small = false }: { name: string; small?: boolean }) {
   return (
     <RadixAvatar.Root className={`avatar ${small ? "avatar-small" : ""}`}>
-      <RadixAvatar.Fallback>
-        {(name || "BP").slice(0, 2).toUpperCase()}
-      </RadixAvatar.Fallback>
+      <RadixAvatar.Fallback>{(name || "BP").slice(0, 2).toUpperCase()}</RadixAvatar.Fallback>
     </RadixAvatar.Root>
   );
 }
-export function AvatarGroup({
-  people,
-}: {
-  people: { id: string; name: string }[];
-}) {
+export function AvatarGroup({ people }: { people: { id: string; name: string }[] }) {
   return (
     <span className="avatar-group" aria-hidden="true">
       {people.slice(0, 5).map((p) => (
         <Avatar key={p.id} name={p.name} small />
       ))}
       {people.length > 5 && (
-        <span className="avatar avatar-small avatar-more">
-          +{people.length - 5}
-        </span>
+        <span className="avatar avatar-small avatar-more">+{people.length - 5}</span>
       )}
     </span>
   );
@@ -279,11 +258,7 @@ export function SettingsRow({
     </>
   );
   return to ? (
-    <Link
-      to={to}
-      aria-label={label}
-      className={`settings-row ${danger ? "danger-text" : ""}`}
-    >
+    <Link to={to} aria-label={label} className={`settings-row ${danger ? "danger-text" : ""}`}>
       {content}
     </Link>
   ) : (
@@ -297,13 +272,7 @@ export function SettingsRow({
     </button>
   );
 }
-export function TransitionView({
-  id,
-  children,
-}: {
-  id: string;
-  children: ReactNode;
-}) {
+export function TransitionView({ id, children }: { id: string; children: ReactNode }) {
   return (
     <motion.div
       key={id}
@@ -322,6 +291,13 @@ export class FieldError extends Error {
     super("Check the highlighted fields.");
   }
 }
+type InputEvent = SyntheticEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>;
+interface FieldChildProps {
+  name?: string;
+  required?: boolean;
+  onInvalid?: (e: InputEvent) => void;
+  onChange?: (e: InputEvent) => void;
+}
 export function Field({
   label,
   children,
@@ -335,31 +311,28 @@ export function Field({
     errors = useContext(Errors);
   const [nativeError, setNativeError] = useState("");
   const child = isValidElement(children)
-    ? (children as ReactElement<any>)
+    ? (children as ReactElement<FieldChildProps & Record<string, unknown>>)
     : null;
-  const error = errors[child?.props.name] || nativeError;
+  const error = errors[child?.props.name ?? ""] || nativeError;
   return (
     <label className="field">
       <span>
         {label}
-        {child?.props.required && (
-          <span className="required-label">Required</span>
-        )}
+        {child?.props.required && <span className="required-label">Required</span>}
       </span>
       {child
         ? cloneElement(child, {
             "aria-label": label,
             "aria-invalid": error ? true : undefined,
             "aria-describedby":
-              [help ? `${id}-help` : "", error ? `${id}-error` : ""]
-                .filter(Boolean)
-                .join(" ") || undefined,
-            onInvalid: (e: any) => {
+              [help ? `${id}-help` : "", error ? `${id}-error` : ""].filter(Boolean).join(" ") ||
+              undefined,
+            onInvalid: (e: InputEvent) => {
               e.preventDefault();
-              setNativeError(e.target.validationMessage);
+              setNativeError(e.currentTarget.validationMessage);
               child.props.onInvalid?.(e);
             },
-            onChange: (e: any) => {
+            onChange: (e: InputEvent) => {
               setNativeError("");
               child.props.onChange?.(e);
             },
@@ -374,10 +347,17 @@ export function Field({
     </label>
   );
 }
-export function Notice({ children }: { children: ReactNode }) {
+export function Notice({
+  children,
+  tone = "warning",
+}: {
+  children: ReactNode;
+  /** "info" is announced politely; "warning" interrupts assistive technology. */
+  tone?: "warning" | "info";
+}) {
   return (
-    <div className="notice" role="alert">
-      <AlertCircle size={20} />
+    <div className={`notice notice-${tone}`} role={tone === "info" ? "status" : "alert"}>
+      {tone === "info" ? <Info size={20} /> : <AlertCircle size={20} />}
       <div>{children}</div>
     </div>
   );
@@ -412,13 +392,7 @@ export function Loading() {
     </div>
   );
 }
-export function ErrorState({
-  error,
-  retry,
-}: {
-  error: Error;
-  retry: () => void;
-}) {
+export function ErrorState({ error, retry }: { error: Error; retry: () => void }) {
   return (
     <div className="error-state">
       <Notice>{error.message}</Notice>
@@ -490,9 +464,7 @@ export function AsyncForm({
       if (e instanceof FieldError) {
         setFields(e.fields);
         const name = Object.keys(e.fields)[0];
-        ref.current
-          ?.querySelector<HTMLElement>(`[name="${CSS.escape(name)}"]`)
-          ?.focus();
+        ref.current?.querySelector<HTMLElement>(`[name="${CSS.escape(name)}"]`)?.focus();
       }
       setError(e instanceof Error ? e.message : "Please try again");
     } finally {
@@ -532,11 +504,7 @@ export function ExpandableText({ text }: { text: string }) {
   if (!text) return null;
   return (
     <div className="expandable-text">
-      <p id={id}>
-        {text.length > 240 && !expanded
-          ? `${text.slice(0, 240).trimEnd()}…`
-          : text}
-      </p>
+      <p id={id}>{text.length > 240 && !expanded ? `${text.slice(0, 240).trimEnd()}…` : text}</p>
       {text.length > 240 && (
         <button
           type="button"
@@ -563,27 +531,17 @@ export function MoreActions({
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button
-          className="icon-button"
-          aria-label={`More actions for ${title}`}
-        >
+        <button className="icon-button" aria-label={`More actions for ${title}`}>
           <MoreHorizontal size={22} />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          className="menu-content"
-          sideOffset={8}
-          align="end"
-        >
+        <DropdownMenu.Content className="menu-content" sideOffset={8} align="end">
           <DropdownMenu.Item className="menu-item" onSelect={onEdit}>
             <Pencil size={18} />
             Edit
           </DropdownMenu.Item>
-          <DropdownMenu.Item
-            className="menu-item danger-text"
-            onSelect={onDelete}
-          >
+          <DropdownMenu.Item className="menu-item danger-text" onSelect={onDelete}>
             <Trash2 size={18} />
             Delete
           </DropdownMenu.Item>

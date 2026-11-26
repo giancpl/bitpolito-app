@@ -6,6 +6,23 @@ Node 22.12+, Linux build tools and USB debugging or an Android emulator.
 `npm run android:setup` installs an isolated JDK 21 and Android SDK 36 under
 `.android-local`; it does not replace system Java. Android 8/API 26 is the minimum.
 
+## Release builds
+
+Debug APKs are for pilots. For a signed release, provide a keystore through
+environment variables (or Gradle properties of the same name) and a version:
+
+```bash
+export BITPOLITO_KEYSTORE=/secure/path/bitpolito.jks
+export BITPOLITO_KEYSTORE_PASSWORD=… BITPOLITO_KEY_ALIAS=… BITPOLITO_KEY_PASSWORD=…
+npm run build
+npx cap sync android
+(cd android && ./gradlew :app:assembleTeamRelease -PversionCode=2 -PversionName=1.1)
+```
+
+The release signing config applies only when all four variables are set. Never
+commit the keystore. Code shrinking stays off because MarmotKit's JNA/uniffi
+bindings rely on reflection.
+
 ```bash
 npm ci
 npm run android:setup
@@ -83,9 +100,7 @@ npm run test:android:hub
 This opt-in test connects only disposable fixture identities on the installed
 sandbox. It refuses a non-fixture signed-in identity, uses the real Android
 bridge and two loopback relays, and never replaces an existing identity vault.
-It exercises encrypted approval and the office workflow. Do not run the old
-HTTP/Firebase smoke scripts against this APK: they describe the archived server
-installation.
+It exercises encrypted approval and the office workflow.
 
 ## Physical Android pilot
 

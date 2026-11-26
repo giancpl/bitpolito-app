@@ -6,26 +6,25 @@ export interface VaultRecord {
   encrypted: string;
 }
 const storageKey = "bitpolito.identity.v1";
-export const readVault = async (): Promise<VaultRecord | undefined> => isAndroid ? JSON.parse((await Native.vaultRead()).value || "null") || undefined : get<VaultRecord>(storageKey);
+export const readVault = async (): Promise<VaultRecord | undefined> =>
+  isAndroid
+    ? JSON.parse((await Native.vaultRead()).value || "null") || undefined
+    : get<VaultRecord>(storageKey);
 export const saveVault = (r: VaultRecord) =>
-  isAndroid ? Native.vaultWrite({value: JSON.stringify({pubkey:r.pubkey,encrypted:r.encrypted})}) : set(storageKey, { pubkey: r.pubkey, encrypted: r.encrypted });
-export const forgetVault = () => isAndroid ? Native.vaultRemove() : del(storageKey);
+  isAndroid
+    ? Native.vaultWrite({ value: JSON.stringify({ pubkey: r.pubkey, encrypted: r.encrypted }) })
+    : set(storageKey, { pubkey: r.pubkey, encrypted: r.encrypted });
+export const forgetVault = () => (isAndroid ? Native.vaultRemove() : del(storageKey));
 let worker: Worker | undefined,
   id = 0;
-const pending = new Map<
-  number,
-  { resolve: (v: any) => void; reject: (e: Error) => void }
->();
+const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 export function lockVault() {
   worker?.terminate();
   worker = undefined;
   for (const p of pending.values()) p.reject(Error("Identity locked."));
   pending.clear();
 }
-export function vaultCall<T>(
-  action: string,
-  payload: unknown = {},
-): Promise<T> {
+export function vaultCall<T>(action: string, payload: unknown = {}): Promise<T> {
   if (!worker) {
     worker = new Worker(new URL("./vault-worker.ts", import.meta.url), {
       type: "module",
@@ -42,12 +41,14 @@ export function vaultCall<T>(
   }
   return new Promise((resolve, reject) => {
     const serial = ++id;
-    pending.set(serial, { resolve, reject });
+    pending.set(serial, { resolve: resolve as (v: unknown) => void, reject });
     worker!.postMessage({ id: serial, action, payload });
   });
 }
-export const signLocal = (event: EventTemplate) =>
-  vaultCall<VerifiedEvent>("sign", { event });
-export const localSigner=(pubkey:string)=>({pubkey,signEvent:signLocal,
-  encrypt:(pubkey:string,content:string)=>vaultCall<string>('encrypt',{pubkey,content}),
-  decrypt:(pubkey:string,content:string)=>vaultCall<string>('decrypt',{pubkey,content})});
+export const signLocal = (event: EventTemplate) => vaultCall<VerifiedEvent>("sign", { event });
+export const localSigner = (pubkey: string) => ({
+  pubkey,
+  signEvent: signLocal,
+  encrypt: (pubkey: string, content: string) => vaultCall<string>("encrypt", { pubkey, content }),
+  decrypt: (pubkey: string, content: string) => vaultCall<string>("decrypt", { pubkey, content }),
+});

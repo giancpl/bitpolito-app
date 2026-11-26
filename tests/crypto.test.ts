@@ -20,9 +20,7 @@ it("imports private keys encrypted and rejects public keys or short passwords", 
   const recovered = readBackup(record.encrypted, "a secure local password");
   expect(getPublicKey(recovered.secret)).toBe(getPublicKey(secret));
   expect(recovered.security).toBe(0);
-  expect(() =>
-    importKey(npubEncode(getPublicKey(secret)), "a secure local password"),
-  ).toThrow();
+  expect(() => importKey(npubEncode(getPublicKey(secret)), "a secure local password")).toThrow();
   expect(() => validPassword("short")).toThrow();
   secret.fill(0);
   recovered.secret.fill(0);

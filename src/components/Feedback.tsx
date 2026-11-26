@@ -17,9 +17,9 @@ type Confirmation = {
   action?: string;
   danger?: boolean;
 };
-const ConfirmContext = createContext<
-  (options: Confirmation | string) => Promise<boolean>
->(async () => false);
+const ConfirmContext = createContext<(options: Confirmation | string) => Promise<boolean>>(
+  async () => false,
+);
 const ToastContext = createContext<(message: string) => void>(() => {});
 export const useConfirm = () => useContext(ConfirmContext);
 export const useToast = () => useContext(ToastContext);
@@ -29,8 +29,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const visual = window.visualViewport;
     if (!confirmation || !visual) return;
-    const update = () =>
-      setViewport({ height: visual.height, top: visual.offsetTop });
+    const update = () => setViewport({ height: visual.height, top: visual.offsetTop });
     update();
     visual.addEventListener("resize", update);
     visual.addEventListener("scroll", update);
@@ -40,9 +39,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     };
   }, [!!confirmation]);
   const pending = useRef<((answer: boolean) => void) | null>(null);
-  const [notice, setNotice] = useState<{ id: number; message: string } | null>(
-    null,
-  );
+  const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const confirm = useCallback((options: Confirmation | string) => {
     if (pending.current) return Promise.resolve(false);
     return new Promise<boolean>((resolve) => {
@@ -112,15 +109,10 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
                 }
               >
                 <AlertDialog.Title>{confirmation?.title}</AlertDialog.Title>
-                <AlertDialog.Description>
-                  {confirmation?.description}
-                </AlertDialog.Description>
+                <AlertDialog.Description>{confirmation?.description}</AlertDialog.Description>
                 <div className="button-row">
                   <AlertDialog.Cancel asChild>
-                    <button
-                      className="button secondary"
-                      onClick={() => answer(false)}
-                    >
+                    <button className="button secondary" onClick={() => answer(false)}>
                       Cancel
                     </button>
                   </AlertDialog.Cancel>
@@ -142,10 +134,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
                 key={notice.id}
                 open
                 onOpenChange={(open) => {
-                  if (!open)
-                    setNotice((current) =>
-                      current?.id === notice.id ? null : current,
-                    );
+                  if (!open) setNotice((current) => (current?.id === notice.id ? null : current));
                 }}
                 asChild
                 forceMount
@@ -161,10 +150,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
                     <Check size={18} />
                   </span>
                   <Toast.Description>{notice.message}</Toast.Description>
-                  <Toast.Close
-                    className="icon-button"
-                    aria-label="Dismiss message"
-                  >
+                  <Toast.Close className="icon-button" aria-label="Dismiss message">
                     <X size={18} />
                   </Toast.Close>
                 </motion.li>

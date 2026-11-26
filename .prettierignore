@@ -1,0 +1,8 @@
+android/
+.android-local/
+artifacts/
+dist/
+test-results/
+package-lock.json
+public/
+legacy/

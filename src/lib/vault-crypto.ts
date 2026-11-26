@@ -17,9 +17,7 @@ export function readBackup(value: string, password: string) {
     bytes[1] < 16 ||
     bytes[1] > 18
   )
-    throw Error(
-      "This backup format or encryption cost is not supported on this device.",
-    );
+    throw Error("This backup format or encryption cost is not supported on this device.");
   const secret = decrypt(value, password);
   try {
     getPublicKey(secret);

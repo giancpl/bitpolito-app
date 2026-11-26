@@ -15,7 +15,19 @@ export default defineConfig({
       "qrcode",
     ],
   },
-  server: { host: "127.0.0.1", watch: { ignored: ["**/.android-local/**", "**/android/**", "**/artifacts/**", "**/data/**", "**/test-results/**"] }, proxy: { "/api": process.env.BITPOLITO_API_PROXY||"http://127.0.0.1:3001" } },
+  server: {
+    host: "127.0.0.1",
+    watch: {
+      ignored: [
+        "**/.android-local/**",
+        "**/android/**",
+        "**/artifacts/**",
+        "**/data/**",
+        "**/test-results/**",
+      ],
+    },
+    proxy: { "/api": process.env.BITPOLITO_API_PROXY || "http://127.0.0.1:3001" },
+  },
   build: {
     outDir: "dist/client",
     rollupOptions: {

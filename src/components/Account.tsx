@@ -1,6 +1,7 @@
-import {hubEnabled} from '../lib/hub';
-import {isAndroid} from "../lib/native";
-import {AndroidNotifications} from "./AndroidNotifications";
+import { team } from "../lib/hub";
+import { isAndroid } from "../lib/native";
+import { backupName, downloadText } from "../lib/download";
+import { AndroidNotifications } from "./AndroidNotifications";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { npubEncode } from "nostr-tools/nip19";
@@ -13,13 +14,10 @@ import {
   LogOut,
   LockKeyhole,
   ShieldCheck,
-  Smartphone,
   UserRound,
-  FolderOpen,
   CircleHelp,
 } from "lucide-react";
 import { useIdentity } from "../lib/identity";
-import { put, downloadText } from "../lib/api";
 import { saveVault, forgetVault, vaultCall } from "../lib/vault";
 import {
   AsyncForm,
@@ -28,14 +26,10 @@ import {
   Field,
   FieldError,
   Notice,
-
   SettingsRow,
   TransitionView,
 } from "./ui";
 import { useConfirm, useToast } from "./Feedback";
-import { InstallWebApp } from "./WebApp";
-import { Notifications } from "./Notifications";
-import { MooBanner } from "./Moo";
 import { Help, isHelpTopic } from "./Help";
 const titles: Record<string, string> = {
   profile: "Profile",
@@ -43,7 +37,6 @@ const titles: Record<string, string> = {
   alerts: "Office alerts",
   identity: "Identity & recovery",
   password: "Change encryption password",
-  install: "Install BitPolito",
   help: "Help",
 };
 export function AccountPage() {
@@ -53,8 +46,12 @@ export function AccountPage() {
     [params] = useSearchParams();
   const requested = params.get("view") || "profile",
     view = Object.hasOwn(titles, requested) ? requested : "profile";
-  const backView = view === "password" ? "identity"
-    : view === "help" && isHelpTopic(params.get("topic")) ? "help" : "profile";
+  const backView =
+    view === "password"
+      ? "identity"
+      : view === "help" && isHelpTopic(params.get("topic"))
+        ? "help"
+        : "profile";
   const confirm = useConfirm(),
     toast = useToast();
   const [error, setError] = useState("");
@@ -91,19 +88,13 @@ export function AccountPage() {
   }
   return (
     <section className="profile-panel account-page" aria-label={titles[view]}>
-      <h1 tabIndex={-1}>{titles[view]}</h1>{hubEnabled&&view==='identity'&&<Notice>Your encrypted backup restores your Nostr identity. On a new phone, an administrator must approve group access again. Private history is not included.</Notice>}
       {view !== "profile" && (
-        <Button
-          variant="ghost"
-          className="panel-back"
-          onClick={() =>
-            changeView(backView)
-          }
-        >
+        <Button variant="ghost" className="panel-back" onClick={() => changeView(backView)}>
           <ArrowLeft size={16} />
           {titles[backView]}
         </Button>
       )}
+      <h1 tabIndex={-1}>{titles[view]}</h1>
 
       <TransitionView id={view}>
         {view === "profile" ? (
@@ -113,10 +104,14 @@ export function AccountPage() {
               <div>
                 <h3>{user.name || "Your profile"}</h3>
                 <span className="profile-role">
-                  {user.role === "admin" ? "Administrator" : user.role === "member" ? "Member" : "Access pending"}
+                  {user.role === "admin"
+                    ? "Administrator"
+                    : user.role === "member"
+                      ? "Member"
+                      : "Access pending"}
                 </span>
               </div>
-              <span className="connected-badge">{hubEnabled?"Identity linked":"Connected"}</span>
+              <span className="connected-badge">Identity linked</span>
             </div>
             <div className="settings-list">
               <SettingsRow
@@ -151,12 +146,6 @@ export function AccountPage() {
                 detail="Short guides, whenever you need them"
                 onClick={() => changeView("help")}
               />
-              {!isAndroid && <SettingsRow icon={<Smartphone size={20} />} label="Install app" onClick={() => changeView("install")} />}
-              <SettingsRow
-                icon={<FolderOpen size={20} />}
-                label="Tools & resources"
-                onClick={() => void go("/resources")}
-              />
               {user.role === "admin" && (
                 <SettingsRow
                   icon={<ShieldCheck size={20} />}
@@ -178,9 +167,9 @@ export function AccountPage() {
           <AsyncForm
             submitLabel="Save profile"
             onSubmit={async (data) => {
-              await put("/profile", {
-                name: data.get("name"),
-                about: data.get("about"),
+              await team.saveProfile({
+                name: String(data.get("name")),
+                about: String(data.get("about") || ""),
               });
               await identity.refresh();
               clearDirty();
@@ -198,18 +187,17 @@ export function AccountPage() {
               />
             </Field>
             <Field label="About you">
-              <textarea
-                name="about"
-                defaultValue={user.about}
-                rows={3}
-                maxLength={500}
-              />
+              <textarea name="about" defaultValue={user.about} rows={3} maxLength={500} />
             </Field>
           </AsyncForm>
         ) : view === "alerts" ? (
-          isAndroid ? <AndroidNotifications /> : hubEnabled ? <Notice>Office alerts run in the Android app. This browser is a simulator.</Notice> : <Notifications />
-        ) : view === "install" ? (
-          <InstallWebApp />
+          isAndroid ? (
+            <AndroidNotifications />
+          ) : (
+            <Notice tone="info">
+              Office alerts run in the Android app. This browser is a simulator.
+            </Notice>
+          )
         ) : view === "password" ? (
           <AsyncForm
             submitLabel="Change password & download backup"
@@ -220,20 +208,14 @@ export function AccountPage() {
               const encrypted = await vaultCall<string>("password", {
                 password,
               });
-              await downloadText(
-                encrypted,
-                `bitpolito-${user.id.slice(0, 8)}.ncryptsec`,
-              );
+              await downloadText(encrypted, backupName(user.id));
               await saveVault({ pubkey: user.id, encrypted });
               await identity.refreshVault();
-              toast(
-                "Password changed. Keep the new backup; older copies use the old password.",
-              );
+              toast("Password changed. Keep the new backup; older copies use the old password.");
             }}
           >
             <p className="small muted">
-              Changing the password downloads a new encrypted backup. Keep it
-              safe.
+              Changing the password downloads a new encrypted backup. Keep it safe.
             </p>
             <Field label="New encryption password">
               <input
@@ -258,44 +240,39 @@ export function AccountPage() {
           </AsyncForm>
         ) : (
           <div className="recovery-content">
+            <Notice tone="info">
+              Your encrypted backup restores your Nostr identity. On a new phone, an administrator
+              must approve team access again. Private history is not included.
+            </Notice>
             <div className="identity-status">
               <LockKeyhole size={20} />
               <span>
-                {local
-                  ? identity.unlocked
-                    ? "Unlocked"
-                    : "Keys locked"
-                  : "External identity"}
+                {local ? (identity.unlocked ? "Unlocked" : "Keys locked") : "External identity"}
               </span>
             </div>
             <p className="small muted">
-              Your app stays connected when your keys lock. Private keys stay on
-              your device or in your signer.
+              Your app stays connected when your keys lock. Private keys stay on your device or in
+              your signer.
             </p>
             {local ? (
               <>
                 <Button
-                  onClick={() => void run(async () => {
-                    await downloadText(
-                      identity.vault!.encrypted,
-                      `bitpolito-${user.id.slice(0, 8)}.ncryptsec`,
-                    );
-                    toast("Encrypted backup downloaded.");
-                  })}
+                  onClick={() =>
+                    void run(async () => {
+                      await downloadText(identity.vault!.encrypted, backupName(user.id));
+                      toast("Encrypted backup downloaded.");
+                    })
+                  }
                 >
                   <Download size={18} />
                   Download encrypted backup
                 </Button>
                 <p className="recovery-hint">
-                  Recovery needs this backup and its password. BitPolito cannot
-                  reset the password.
+                  Recovery needs this backup and its password. BitPolito cannot reset the password.
                 </p>
                 {identity.unlocked ? (
                   <>
-                    <Button
-                      variant="secondary"
-                      onClick={() => changeView("password")}
-                    >
+                    <Button variant="secondary" onClick={() => changeView("password")}>
                       Change encryption password
                     </Button>
                     <Button
@@ -317,8 +294,8 @@ export function AccountPage() {
               </>
             ) : (
               <p className="recovery-hint">
-                Your signer manages its private key. Use its backup or export
-                controls to recover it on another device.
+                Your signer manages its private key. Use its backup or export controls to recover it
+                on another device.
               </p>
             )}
             <details className="public-identity">

@@ -1,3 +1,20 @@
+# Cleanup and interface refresh — 2026-11-26
+
+Removed the archived server, PWA and their tests (preserved at tag
+`server-final`), replaced the HTTP-path adapter with a typed `team.*` client,
+hardened the native runtime and refreshed the interface (urgent door requests
+first, named requesters with a countdown, quieter connection status, dark theme).
+
+- `npm run check`: typecheck, ESLint (0 errors), Prettier, 16 unit tests and the
+  production build. The production bundle contains no simulator code.
+- `npm run test:e2e`: 8 browser simulator workflows, including the new request
+  priority and dark-theme checks, with all application API requests blocked.
+- `npm run android:build` and `npm run android:build -- team`: both APKs built;
+  the team assets contain no sandbox or simulator code. Kotlin/JVM unit tests
+  passed (`HubAlertPolicyTest` 8/8, `HubProjectionTest` 8/8).
+- Not yet repeated on this revision: instrumented tests on a device or emulator,
+  the opt-in `test:android:*` device scripts, and a physical phone pilot.
+
 # Distributed Android verification — 2026-11-26
 
 This section describes the current Marmot APK. The dated records below describe

@@ -1,5 +1,5 @@
 import { isAndroid, Native } from "../lib/native";
-import {hubEnabled,setHubSigner} from '../lib/hub';
+import { setHubSigner, team } from "../lib/hub";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -13,7 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import QRCode from "qrcode";
-import { api, downloadText } from "../lib/api";
+import { backupName, downloadText } from "../lib/download";
 import { useIdentity } from "../lib/identity";
 import {
   extensionSigner,
@@ -22,34 +22,16 @@ import {
   remoteSigner,
   type IdentitySigner,
 } from "../lib/signers";
-import {
-  lockVault,
-  saveVault,
-  vaultCall,
-  signLocal,
-  localSigner,
-  type VaultRecord,
-} from "../lib/vault";
+import { lockVault, saveVault, vaultCall, localSigner, type VaultRecord } from "../lib/vault";
 import { useConfirm } from "./Feedback";
-import {
-  AsyncForm,
-  Button,
-  Field,
-  FieldError,
-  Modal,
-  Notice,
-  TransitionView,
-} from "./ui";
-import type { AppConfig } from "../../shared/contracts";
+import { AsyncForm, Button, Field, FieldError, Modal, Notice, TransitionView } from "./ui";
 export function IdentityDialog() {
   const identity = useIdentity();
   const confirm = useConfirm();
   const [mode, setMode] = useState("choose"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [generated, setGenerated] = useState<
-      (VaultRecord & { name: string }) | null
-    >(null),
+    [generated, setGenerated] = useState<(VaultRecord & { name: string }) | null>(null),
     [downloaded, setDownloaded] = useState(false),
     [confirmed, setConfirmed] = useState(false),
     [qr, setQR] = useState(""),
@@ -63,9 +45,9 @@ export function IdentityDialog() {
   const mobile = useRef<ReturnType<typeof mobileURI> | null>(null);
   const config = useQuery({
     queryKey: ["config"],
-    queryFn: () => api<AppConfig>("/config"),
+    queryFn: team.configuration,
   });
-  const signerRelays=config.data?.signerRelays||config.data?.relays||[];
+  const signerRelays = config.data?.signerRelays || config.data?.relays || [];
   useEffect(
     () => () => {
       abort.current.abort();
@@ -149,8 +131,7 @@ export function IdentityDialog() {
         confirmed ||
         (await confirm({
           title: "Leave before saving your backup?",
-          description:
-            "You need the encrypted backup and its password to recover this identity.",
+          description: "You need the encrypted backup and its password to recover this identity.",
           action: "Leave setup",
           danger: true,
         }))
@@ -163,7 +144,6 @@ export function IdentityDialog() {
         </button>
       )}
       <TransitionView id={generated ? "backup" : mode}>
-        {hubEnabled&&<p className="small muted">Connecting allows identity proofs, relay discovery and NIP-44 encrypted invitations. Your name, profile and contacts are not published publicly.</p>}
         {generated ? (
           <div className="form">
             <div className="wizard-progress" aria-label="Step 2 of 2">
@@ -171,24 +151,19 @@ export function IdentityDialog() {
               <span />
             </div>
             <p className="step-label">Step 2 of 2 · Recovery backup</p>
-            <img
-              className="identity-cow"
-              src="/brand/cow-icon-blue.svg"
-              alt=""
-            />
+            <img className="identity-cow" src="/brand/cow-icon-blue.svg" alt="" />
             <p>
-              Your keys belong to you. Recovery requires both this encrypted
-              backup and its password.
+              Your keys belong to you. Recovery requires both this encrypted backup and its
+              password.
             </p>
             <Button
               variant="secondary"
-              onClick={() => void run(async () => {
-                await downloadText(
-                  generated.encrypted,
-                  `bitpolito-${generated.pubkey.slice(0, 8)}.ncryptsec`,
-                );
-                setDownloaded(true);
-              })}
+              onClick={() =>
+                void run(async () => {
+                  await downloadText(generated.encrypted, backupName(generated.pubkey));
+                  setDownloaded(true);
+                })
+              }
             >
               <Download size={18} />
               Download encrypted backup{downloaded && <Check size={18} />}
@@ -199,8 +174,7 @@ export function IdentityDialog() {
                 checked={confirmed}
                 onChange={(e) => setConfirmed(e.target.checked)}
               />
-              I saved my backup and understand that BitPolito cannot reset its
-              password.
+              I saved my backup and understand that BitPolito cannot reset its password.
             </label>
             <Button
               busy={busy}
@@ -214,15 +188,15 @@ export function IdentityDialog() {
         ) : mode === "choose" ? (
           <>
             <p className="muted">
-              A familiar name. Your own keys. Everything you need to join the
-              office.
+              A familiar name. Your own keys. Everything you need to join the office.
+            </p>
+            <p className="small muted privacy-note">
+              Private keys stay on this device or in your signer. Your name and profile are shared
+              only inside the encrypted team, never published publicly.
             </p>
             <div className="signin-options">
               {identity.vault && (
-                <button
-                  onClick={() => choose("unlock")}
-                  className="saved-key-option"
-                >
+                <button onClick={() => choose("unlock")} className="saved-key-option">
                   <KeyRound />
                   <span>
                     <strong>Unlock saved identity</strong>
@@ -246,7 +220,11 @@ export function IdentityDialog() {
                 <Monitor />
                 <span>
                   <strong>Use my Nostr identity</strong>
-                  <small>{isAndroid?"Use an Android or remote signer":"Connect an extension or mobile signer"}</small>
+                  <small>
+                    {isAndroid
+                      ? "Use an Android or remote signer"
+                      : "Connect an extension or mobile signer"}
+                  </small>
                 </span>
                 <ArrowRight />
               </button>
@@ -286,12 +264,7 @@ export function IdentityDialog() {
             </div>
             <p className="step-label">Step 1 of 2 · Your identity</p>
             <Field label="Your name">
-              <input
-                name="name"
-                required
-                maxLength={60}
-                autoComplete="nickname"
-              />
+              <input name="name" required maxLength={60} autoComplete="nickname" />
             </Field>
             <Field
               label="Key encryption password"
@@ -327,21 +300,18 @@ export function IdentityDialog() {
                 password: String(data.get("password")),
               });
               identity.unlock();
-              if (identity.user?.id === pubkey) {if(hubEnabled)setHubSigner(localSigner(pubkey));identity.close();}
-              else await connect(localSigner(pubkey));
+              if (identity.user?.id === pubkey) {
+                setHubSigner(localSigner(pubkey));
+                identity.close();
+              } else await connect(localSigner(pubkey));
             }}
           >
             <p className="muted">
-              Unlock the keys saved on this device. Your app session can remain
-              connected while your keys are locked.
+              Unlock the keys saved on this device. Your app session can remain connected while your
+              keys are locked.
             </p>
             <Field label="Key encryption password">
-              <input
-                name="password"
-                type="password"
-                required
-                autoComplete="current-password"
-              />
+              <input name="password" type="password" required autoComplete="current-password" />
             </Field>
           </AsyncForm>
         ) : mode === "restore" ? (
@@ -350,10 +320,8 @@ export function IdentityDialog() {
             onSubmit={async (data) => {
               const file = data.get("backup") as File,
                 pasted = String(data.get("key") || "").trim();
-              if (file?.size && pasted)
-                throw Error("Choose a file or paste a key, not both.");
-              if (file?.size > 512)
-                throw Error("Choose a valid small key backup.");
+              if (file?.size && pasted) throw Error("Choose a file or paste a key, not both.");
+              if (file?.size > 512) throw Error("Choose a valid small key backup.");
               const key = file?.size ? (await file.text()).trim() : pasted;
               if (!key.startsWith("ncryptsec1") && !key.startsWith("nsec1"))
                 throw new FieldError({
@@ -381,22 +349,33 @@ export function IdentityDialog() {
             }}
           >
             <p className="muted">
-              Restore an encrypted backup or import an existing private key.
-              Everything is processed on this device.
+              Restore an encrypted backup or import an existing private key. Everything is processed
+              on this device.
             </p>
-            {isAndroid ? <Button variant="secondary" onClick={() => void run(async()=>{setRestore((await Native.importBackup()).content);})}>Choose encrypted backup</Button> : <Field label="Backup file">
-              <input
-                type="file"
-                name="backup"
-                accept=".ncryptsec,.nsec,.txt"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  setFileSource(
-                    file && file.size <= 512 ? (await file.text()).trim() : "",
-                  );
-                }}
-              />
-            </Field>}
+            {isAndroid ? (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  void run(async () => {
+                    setRestore((await Native.importBackup()).content);
+                  })
+                }
+              >
+                Choose encrypted backup
+              </Button>
+            ) : (
+              <Field label="Backup file">
+                <input
+                  type="file"
+                  name="backup"
+                  accept=".ncryptsec,.nsec,.txt"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    setFileSource(file && file.size <= 512 ? (await file.text()).trim() : "");
+                  }}
+                />
+              </Field>
+            )}
             <Field label="Or paste your key">
               <textarea
                 name="key"
@@ -409,11 +388,7 @@ export function IdentityDialog() {
               />
             </Field>
             <Field
-              label={
-                source.startsWith("nsec1")
-                  ? "New encryption password"
-                  : "Backup password"
-              }
+              label={source.startsWith("nsec1") ? "New encryption password" : "Backup password"}
             >
               <input
                 name="password"
@@ -442,7 +417,9 @@ export function IdentityDialog() {
             <button
               disabled={busy}
               onClick={() =>
-                void run(async () => connect(await (isAndroid ? androidSigner() : extensionSigner())))
+                void run(async () =>
+                  connect(await (isAndroid ? androidSigner() : extensionSigner())),
+                )
               }
             >
               <Monitor />
@@ -477,12 +454,7 @@ export function IdentityDialog() {
               }
             >
               <Field label="Bunker connection link">
-                <input
-                  name="bunker"
-                  required
-                  placeholder="bunker://…"
-                  autoComplete="off"
-                />
+                <input name="bunker" required placeholder="bunker://…" autoComplete="off" />
               </Field>
             </AsyncForm>
             <div className="divider">
@@ -514,10 +486,7 @@ export function IdentityDialog() {
                         color: { dark: "#001CE0", light: "#ffffff" },
                       }),
                     );
-                    const signer = await mobile.current.connect(
-                      abort.current.signal,
-                      setAuthURL,
-                    );
+                    const signer = await mobile.current.connect(abort.current.signal, setAuthURL);
                     if (generation.current !== current) {
                       await signer.close?.();
                       return;
@@ -532,20 +501,15 @@ export function IdentityDialog() {
             )}
             {!signerRelays.length && (
               <p className="small muted">
-                A configured relay is needed for remote/mobile signers. Browser
-                extensions and local identities work without one.
+                A configured relay is needed for remote/mobile signers. Browser extensions and local
+                identities work without one.
               </p>
             )}
           </>
         )}
       </TransitionView>
       {authURL && /^https:\/\//.test(authURL) && (
-        <a
-          className="text-button"
-          target="_blank"
-          rel="noreferrer"
-          href={authURL}
-        >
+        <a className="text-button" target="_blank" rel="noreferrer" href={authURL}>
           Approve access in your signer
         </a>
       )}

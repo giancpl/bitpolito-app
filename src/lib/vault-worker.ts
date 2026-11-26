@@ -1,10 +1,6 @@
-import {
-  generateSecretKey,
-  getPublicKey,
-  finalizeEvent,
-} from "nostr-tools/pure";
+import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure";
 import { encrypt } from "nostr-tools/nip49";
-import { v2 as nip44 } from 'nostr-tools/nip44';
+import { v2 as nip44 } from "nostr-tools/nip44";
 import { validPassword, readBackup, importKey } from "./vault-crypto";
 let secret: Uint8Array | null = null,
   security: 0 | 1 | 2 = 1;
@@ -38,10 +34,17 @@ self.onmessage = ({ data }) => {
     } else if (action === "sign") {
       if (!secret) throw Error("Unlock your identity first.");
       value = finalizeEvent(payload.event, secret);
-    } else if(action==='encrypt'||action==='decrypt'){
-      if(!secret)throw Error('Unlock your identity first.');
-      const key=nip44.utils.getConversationKey(secret,payload.pubkey);
-      try{value=action==='encrypt'?nip44.encrypt(payload.content,key):nip44.decrypt(payload.content,key);}finally{key.fill(0);}
+    } else if (action === "encrypt" || action === "decrypt") {
+      if (!secret) throw Error("Unlock your identity first.");
+      const key = nip44.utils.getConversationKey(secret, payload.pubkey);
+      try {
+        value =
+          action === "encrypt"
+            ? nip44.encrypt(payload.content, key)
+            : nip44.decrypt(payload.content, key);
+      } finally {
+        key.fill(0);
+      }
     } else if (action === "password") {
       if (!secret) throw Error("Unlock your identity first.");
       validPassword(payload.password);

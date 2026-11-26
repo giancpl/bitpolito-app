@@ -11,5 +11,4 @@ export function sandboxKey(n: number) {
   key[31] = n;
   return key;
 }
-export const sandboxOrigin = (profile: SandboxProfile) =>
-  `http://127.0.0.1:${profile.port}`;
+export const sandboxOrigin = (profile: SandboxProfile) => `http://127.0.0.1:${profile.port}`;

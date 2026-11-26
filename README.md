@@ -9,7 +9,7 @@ application server. All interface text, notifications and member guides are Engl
 
 - [Member and administrator guide](docs/distributed-guide.md)
 - [Android build and testing](docs/android-guide.md)
-- [Previous server-based installation](legacy/README.previous.md)
+- [Archived server installation and catalogue migration](legacy/README.md)
 
 ```bash
 npm ci
@@ -78,28 +78,42 @@ No Firebase gateway, hidden alarm or automatic volume changes are used.
 
 ## Preservation and migration
 
-The former Fastify/SQLite source remains available for archived installations
-and regression tests. Existing databases are not reset, migrated into public
-relays, or deleted. Native HTTP/session/push clients are retired from the APK;
-previous native source is retained under `legacy/android`.
+The former Fastify/SQLite server, its PWA and its deployment files were removed
+from this branch and are preserved at the git tag `server-final`. Existing
+databases are not reset, migrated into public relays, or deleted. To move the
+catalogue, export it read-only and import it explicitly; see
+[the archive notes](legacy/README.md).
 
-```bash
-npm run dev:legacy
-npm run dev:sandbox:legacy
-npm run resources:export -- --database /path/to/existing.sqlite --output artifacts/resources.json
-```
+## Development
 
-Only catalogue fields are exported. An administrator previews the JSON in
-**Profile → Administration → Resources → Import an existing catalogue** and
-explicitly publishes it. Sessions, push tokens, invitations, active requests,
-budget documents and operational history are never imported.
+| Command                           | What it does                                                   |
+| --------------------------------- | -------------------------------------------------------------- |
+| `npm run dev`                     | Browser simulator with disposable identities                   |
+| `npm run dev:relays`              | Two persistent loopback Nostr relays for the sandbox APK       |
+| `npm run check`                   | Typecheck, lint, format check, unit tests and production build |
+| `npm run test:e2e`                | Playwright workflows against the browser simulator             |
+| `npm run format`                  | Format the TypeScript and CSS sources with Prettier            |
+| `npm run android:build [-- team]` | Sandbox (default) or team debug APK                            |
+
+Code layout:
+
+- `src/lib/hub.ts` — the typed client (`team.*`) for every encrypted team
+  operation. On Android it calls the native Marmot runtime; in the browser
+  preview it calls the local simulator, which never ships in Android builds.
+- `src/lib/queries.ts` — shared React Query hooks and cache keys.
+- `src/lib/office.ts` — pure door-request wording, covered by unit tests.
+- `android/app/src/main/java/it/bitpolito/hub/` — the native runtime
+  (`HubRuntime`), Capacitor bridges and the office listener service.
+
+The interface follows the phone's light or dark theme. CI (`.github/workflows/ci.yml`)
+runs the web checks, the simulator workflows and the Android sandbox build with
+its JVM tests on every pull request.
 
 ## Verification
 
 ```bash
-npm run typecheck
-npm test
-npx playwright test -c playwright.hub.config.ts
+npm run check
+npm run test:e2e
 npm run android:build
 npm run test:android:hub
 npm run test:android:recovery

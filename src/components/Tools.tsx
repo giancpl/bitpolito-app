@@ -1,13 +1,8 @@
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { useResources } from "../lib/queries";
 import { Empty, ErrorState, ExpandableText, ExternalLink, Loading } from "./ui";
-import type { Resource } from "../../shared/contracts";
 export function ResourcesPage() {
-  const query = useQuery({
-    queryKey: ["resources"],
-    queryFn: () => api<Resource[]>("/resources"),
-  });
+  const query = useResources();
   return (
     <>
       <div className="page-intro">
@@ -18,17 +13,21 @@ export function ResourcesPage() {
           <p>Your BitPolito toolkit.</p>
         </div>
       </div>
-      <Link className="tool-office-link" to="/office"><img src="/brand/icon-bell.svg" alt=""/><span><strong>Office</strong><small>Presence & doorbell</small></span><span aria-hidden="true">→</span></Link>
+      <Link className="tool-office-link" to="/office">
+        <img src="/brand/icon-bell.svg" alt="" />
+        <span>
+          <strong>Office</strong>
+          <small>Presence & doorbell</small>
+        </span>
+        <span aria-hidden="true">→</span>
+      </Link>
       {query.isLoading ? (
         <Loading />
       ) : query.error ? (
         <ErrorState error={query.error} retry={() => void query.refetch()} />
       ) : (
         ["tool", "resource"].map((type) => {
-          const items =
-            query.data?.filter(
-              (r) => r.type === type && r.status === "active",
-            ) || [];
+          const items = query.data?.filter((r) => r.type === type && r.status === "active") || [];
           return (
             <section className="resource-section" key={type}>
               <div className="section-heading">
@@ -69,5 +68,3 @@ export function ResourcesPage() {
     </>
   );
 }
-
-export { OfficePage as HomePage } from "./Moo";

@@ -125,8 +125,9 @@ routing update. Update new invitations after the change.
 
 ## Consult the previous installation
 
-The previous Fastify application and its database are a separate archive. Start
-it only with the documented legacy commands and its original data directory.
+The previous Fastify application and its database are a separate archive,
+preserved at the git tag `server-final` (see [the archive notes](../legacy/README.md)).
+Start it only from that checkout and its original data directory.
 Never point a test reset at that directory. Export resources read-only, review
 the file, and import explicitly into the new group. Do not run both apps as if
 they shared a live office state: there is no bidirectional synchronization.
