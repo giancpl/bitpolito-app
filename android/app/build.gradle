@@ -1,6 +1,19 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 
+// Release metadata and signing are supplied by the environment or gradle properties
+// (e.g. -PversionCode=12 -PversionName=1.2), never committed to the repository.
+def releaseSetting = { String name ->
+    def value = System.getenv(name) ?: project.findProperty(name)?.toString()
+    value?.trim() ? value.trim() : null
+}
+def releaseKeystore = releaseSetting('BITPOLITO_KEYSTORE')
+def releaseSigning = releaseKeystore != null &&
+        ['BITPOLITO_KEYSTORE_PASSWORD', 'BITPOLITO_KEY_ALIAS', 'BITPOLITO_KEY_PASSWORD'].every { releaseSetting(it) != null }
+if (releaseKeystore != null && !releaseSigning) {
+    logger.warn('BITPOLITO_KEYSTORE is set but its passwords or alias are missing: release builds stay unsigned.')
+}
+
 android {
     namespace = "it.bitpolito.hub"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -8,8 +21,8 @@ android {
         applicationId "it.bitpolito.hub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode((project.findProperty('versionCode') ?: '1').toString().toInteger())
+        versionName((project.findProperty('versionName') ?: '1.0').toString())
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -49,10 +62,22 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (releaseSigning) {
+            release {
+                storeFile file(releaseKeystore)
+                storePassword releaseSetting('BITPOLITO_KEYSTORE_PASSWORD')
+                keyAlias releaseSetting('BITPOLITO_KEY_ALIAS')
+                keyPassword releaseSetting('BITPOLITO_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         release {
+            // R8 stays off: JNA and the uniffi-generated MarmotKit bindings resolve classes,
+            // callback interfaces and native structures by reflection. Enabling minification
+            // needs dedicated keep rules and a full device test of the Marmot flows first.
             minifyEnabled false
+            if (releaseSigning) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
