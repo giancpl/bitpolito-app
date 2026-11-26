@@ -1,0 +1,91 @@
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+android {
+    namespace = "it.bitpolito.hub"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "it.bitpolito.hub"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildFeatures { buildConfig true }
+    sourceSets {
+        main {
+            java.srcDir '../../.android-local/marmot/marmotkit-android-0.19.0/kotlin'
+            jniLibs.srcDir '../../.android-local/marmot/marmotkit-android-0.19.0/jniLibs'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    kotlinOptions { jvmTarget = '21' }
+    flavorDimensions += "environment"
+    productFlavors {
+        sandbox {
+            dimension "environment"
+            applicationIdSuffix ".sandbox"
+            versionNameSuffix "-sandbox"
+            buildConfigField "boolean", "SANDBOX", "true"
+        }
+        team {
+            dimension "environment"
+            buildConfigField "boolean", "SANDBOX", "false"
+        }
+    }
+    signingConfigs {
+        debug {
+            storeFile file('../../.android-local/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation 'net.java.dev.jna:jna:5.17.0@aar'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    testImplementation 'org.json:json:20250517'
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+// Direct Gradle invocations must uphold the same boundary as android-build.sh.
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name.contains('Team') }) {
+        if (!fileTree('src/main/assets/public').matching { include '**/*AndroidSandbox*' }.isEmpty()) {
+            throw new GradleException('Sandbox assets detected. Build the team frontend with scripts/android-build.sh team')
+        }
+    }
+}
