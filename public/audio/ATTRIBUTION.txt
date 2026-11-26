@@ -1,0 +1,11 @@
+Mudchute cow 1 — Secretlondon, April 2007
+Recording at Mudchute City Farm, London.
+Source: https://commons.wikimedia.org/wiki/File:Mudchute_cow_1.ogg
+Original: https://upload.wikimedia.org/wikipedia/commons/4/48/Mudchute_cow_1.ogg
+License selected: Creative Commons Attribution-ShareAlike 3.0 Unported
+https://creativecommons.org/licenses/by-sa/3.0/
+
+mudchute-cow.ogg is the unmodified original recording (approximately 2.2 seconds).
+mudchute-cow.mp3 is a format conversion using ffmpeg/libmp3lame, without trimming
+or other edits. Both audio files are distributed under CC BY-SA 3.0.
+No endorsement by the original author is implied.
