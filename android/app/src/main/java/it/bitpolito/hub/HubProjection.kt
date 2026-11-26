@@ -145,6 +145,13 @@ class HubProjection(private val team: String, private val now: () -> Long = {Sys
     fun presenceAnnouncement(user:String):JSONObject?=office().first[user]?.let{source->
         JSONObject(source.toString()).apply{remove("author");remove("adminAtReceipt")}.put("id","presence-${source.getString("id").removePrefix("presence-")}").put("type","presence").put("data",JSONObject().put("action",if(source.getString("type")=="inside")"arrive" else source.getJSONObject("data").getString("action")))
     }
+    /** Reannounce the latest self-authored profile into a new MLS epoch so newly admitted members learn the member's name. */
+    fun profileAnnouncement(user: String): JSONObject? =
+        ordered().lastOrNull { it.getString("author") == user && it.getString("type") == "profile" }?.let { source ->
+            JSONObject(source.toString())
+                .apply { remove("author"); remove("adminAtReceipt") }
+                .put("id", "profile-${source.getString("id").removePrefix("profile-")}")
+        }
     companion object {
         fun validateResource(row:JSONObject) {
             require(row.getString("id").length in 1..128&&row.getString("title").trim().length in 1..120&&row.optString("description").length<=2000&&row.getString("category").trim().length in 1..60){"Enter a title and category within the length limits"}

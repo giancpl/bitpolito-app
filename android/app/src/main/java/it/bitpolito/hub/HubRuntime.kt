@@ -222,6 +222,7 @@ class HubRuntime private constructor(private val context: Context) {
         }
         check(state.ready){"Identity setup needs attention. Check your relays and signer, then try again."}
         }
+        try { kit.catchUpAccounts() } catch (_: Exception) {}
         if(account!=key){projection=null;team=store.get("hub.team.$key")};account=key;signedOut=false
         identityName=if(name.isNotBlank())name.trim().take(60)else store.get("hub.name.$key")?:"Teammate"
         if(invitationRoutes!=null)store.put("hub.relays.$key",JSONArray(invitationRoutes).toString())
@@ -244,11 +245,23 @@ class HubRuntime private constructor(private val context: Context) {
             try{changed=p.ingest(m.plaintext,author,p.members[author]==true)||changed}catch(_:Exception){}
         }
         if(changed)store.put("hub.log.${activeAccount()}.$group",p.export())
-        val announcementKey="hub.announced.${activeAccount()}.$group"
-        val revision=roster.rosterRevision.toString()
-        if(store.get(announcementKey)!=revision){
-            val announcement=p.presenceAnnouncement(activeAccount())
-            if(announcement!=null){val receipt=kit().sendCustomEvent(activeAccount(),group,78uL,listOf(listOf("t","bitpolito.hub.v1")),announcement.toString());if(receipt.published>0u)store.put(announcementKey,revision)}else store.put(announcementKey,revision)
+        val announcementKey = "hub.announced.v2.${activeAccount()}.$group"
+        val revision = roster.rosterRevision.toString()
+        if (store.get(announcementKey) != revision) {
+            val announcements = listOfNotNull(
+                p.profileAnnouncement(activeAccount()),
+                p.presenceAnnouncement(activeAccount()),
+            )
+            val allPublished = announcements.all { announcement ->
+                kit().sendCustomEvent(
+                    activeAccount(),
+                    group,
+                    78uL,
+                    listOf(listOf("t", "bitpolito.hub.v1")),
+                    announcement.toString(),
+                ).published > 0u
+            }
+            if (allPublished) store.put(announcementKey, revision)
         }
         return p
     }
@@ -374,6 +387,8 @@ class HubRuntime private constructor(private val context: Context) {
     @Synchronized fun startSync() {
         if (syncJob?.isActive == true || signedOut || account == null) return
         syncJob = scope.launch {
+            var wasConnected = false
+            var ticks = 0
             while (isActive) {
                 try {
                     gate.withLock {
@@ -385,6 +400,9 @@ class HubRuntime private constructor(private val context: Context) {
                         if (!connected) {
                             lastError = "No relay connection. Updates will retry when connectivity returns."
                         } else {
+                            if (!wasConnected || ticks % 4 == 0) {
+                                try { kit().catchUpAccounts() } catch (_: Exception) {}
+                            }
                             if (visible) admissions()
                             if (team != null) {
                                 val p = load()
@@ -399,6 +417,8 @@ class HubRuntime private constructor(private val context: Context) {
                                 lastError = null
                             }
                         }
+                        wasConnected = connected
+                        ticks++
                         emit?.invoke("bitpolito:realtime", JSONObject())
                     }
                 } catch (e: CancellationException) {
@@ -517,7 +537,12 @@ class HubRuntime private constructor(private val context: Context) {
                         }
                         if(request.optBoolean("restoreAdmin")&&kit().groupRoster(activeAccount(),team!!).members.none{key(it.memberIdHex)==who&&it.isAdmin})kit().promoteAdmin(activeAccount(),team!!,who)
                         invite.put("usedAt",now()).put("usedApplication",request.getString("id"));saveRecords("invites",invitations)
-                        publish("snapshot",JSONObject().put("profiles",JSONArray(p.profiles().values.toList())).put("resources",p.resources()),"snapshot-${request.getString("id")}")
+                        val snapshotProfiles = p.profiles().toMutableMap()
+                        val applicantName = request.optString("name").trim().take(60)
+                        if (applicantName.isNotEmpty() && !snapshotProfiles.containsKey(who)) {
+                            snapshotProfiles[who] = JSONObject().put("id", who).put("name", applicantName).put("about", "")
+                        }
+                        publish("snapshot", JSONObject().put("profiles", JSONArray(snapshotProfiles.values.toList())).put("resources", p.resources()), "snapshot-${request.getString("id")}")
                         request.put("status","approved");saveRecords("applications",rows)
                     }else{
                         check(request.optString("phase").isBlank()){"Approval is already in progress. Finish it before changing this request."}

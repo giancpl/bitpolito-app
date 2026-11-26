@@ -63,6 +63,7 @@ try {
         return (await command("me")).user?.name;
       })
       .toBe(name);
+    await check.poll(async () => (await command("status")).state).toBe("connected");
     console.log(`${name} connected.`);
   }
   async function invite(name) {
@@ -77,13 +78,19 @@ try {
     if ((await command("joinStatus")).status === "pending") await another.click();
     await page.getByLabel("Invitation link or code").fill(link);
     await page.getByRole("button", { name: "Request access", exact: true }).click();
-    await check(page.getByRole("heading", { name: "Waiting for approval" })).toBeVisible();
+    const replacePhone = page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Use this phone", exact: true });
+    const waiting = page.getByRole("heading", { name: "Waiting for approval" });
+    await check(waiting.or(replacePhone)).toBeVisible();
+    if (await replacePhone.isVisible()) await replacePhone.click();
+    await check(waiting).toBeVisible();
   }
   async function approve(name) {
     await page.getByRole("link", { name: "Profile", exact: true }).click();
     await page.getByRole("button", { name: "Administration", exact: true }).click();
     const card = page
-      .locator(".join-applications .request-card")
+      .locator(".join-applications .application-row")
       .filter({ has: page.getByText(name, { exact: true }) });
     await check(card).toBeVisible();
     await card.getByRole("button", { name: "Approve", exact: true }).click();
@@ -101,10 +108,8 @@ try {
     ),
   ).toBe(true);
   await login("Alice");
-  await check(
-    page.getByRole("heading", { name: /^(Hi, Alice\.|Member access required)$/ }),
-  ).toBeVisible();
-  if (await page.getByRole("heading", { name: "Member access required", exact: true }).count()) {
+  await check(page.getByRole("heading", { name: /^(Hi, Alice\.|Join your team)$/ })).toBeVisible();
+  if (await page.getByRole("heading", { name: "Join your team", exact: true }).count()) {
     await page.getByText("Setting up a new team?", { exact: true }).click();
     await page.getByRole("button", { name: "Create a new team", exact: true }).click();
     await page
@@ -150,22 +155,29 @@ try {
     await page.getByRole("link", { name: "Home", exact: true }).click();
   }
   await page.getByRole("link", { name: "Home", exact: true }).click();
-  if (await page.getByRole("button", { name: "I’m in the office", exact: true }).count())
+  if (await page.getByRole("button", { name: "I’m in the office", exact: true }).count()) {
     await page.getByRole("button", { name: "I’m in the office", exact: true }).click();
+    await check(page.getByRole("button", { name: "I’m leaving", exact: true })).toBeVisible();
+  }
   await logout();
   await login("Bob");
   await check(page.getByRole("heading", { name: "Hi, Bob.", exact: true })).toBeVisible();
+  await check.poll(async () => (await command("members")).length).toBeGreaterThanOrEqual(4);
   expect(
     await command("saveResource", { id: "denied" }).then(
       () => false,
       () => true,
     ),
   ).toBe(true);
-  if (await page.getByRole("button", { name: "I’m in the office", exact: true }).count())
+  if (await page.getByRole("button", { name: "I’m in the office", exact: true }).count()) {
     await page.getByRole("button", { name: "I’m in the office", exact: true }).click();
+    await check(page.getByRole("button", { name: "I’m leaving", exact: true })).toBeVisible();
+  }
+  await check(page.getByText("2 people in the office")).toBeVisible();
   await logout();
   await login("Cara");
   await check(page.getByRole("heading", { name: "Hi, Cara.", exact: true })).toBeVisible();
+  await check.poll(async () => (await command("members")).length).toBeGreaterThanOrEqual(4);
   await check(page.getByText("2 people in the office")).toBeVisible();
   await page.getByRole("button", { name: "Ring the office", exact: true }).click();
   await check(
@@ -175,9 +187,11 @@ try {
   await logout();
   await login("Alice");
   await page.getByRole("button", { name: "I’ll get the door", exact: true }).click();
+  await check(page.getByRole("button", { name: "I can’t go", exact: true })).toBeVisible();
   await logout();
   await login("Bob");
   await page.getByRole("button", { name: "I’ll get the door", exact: true }).click();
+  await check(page.getByRole("button", { name: "I can’t go", exact: true })).toBeVisible();
   await check
     .poll(
       async () =>
