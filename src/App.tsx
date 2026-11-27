@@ -1,14 +1,22 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useBlocker, useLocation } from "react-router-dom";
+import { LayoutGroup, motion } from "motion/react";
 import { Grid2X2, House, UserRound } from "lucide-react";
 import { hubEnabled } from "./lib/hub";
 import { useIdentity } from "./lib/identity";
+import {
+  allModuleRoutes,
+  findModuleTitle,
+  isAnyModuleRoute,
+  isModuleRoute,
+  modules,
+} from "./modules/registry";
 import { AccountPage } from "./components/Account";
 import { AndroidSandbox, NativeLifecycle } from "./components/NativeApp";
 import { useConfirm } from "./components/Feedback";
+import { HomePage } from "./components/Home";
 import { ResourcesPage } from "./components/Tools";
 import { ConnectionStatus, HubAccess } from "./components/HubAccess";
-import { OfficePage, RequestBanner } from "./components/Office";
 import { Empty, ErrorState, Loading } from "./components/ui";
 
 // Rarely used, heavier screens load on demand to keep app start fast.
@@ -18,6 +26,8 @@ const AdministrationPage = lazy(() =>
 const IdentityDialog = lazy(() =>
   import("./components/IdentityDialog").then((m) => ({ default: m.IdentityDialog })),
 );
+
+const pageEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
 function UnsavedChangesGuard() {
   const confirm = useConfirm();
@@ -75,11 +85,11 @@ const sectionTitle = (path: string) =>
         ? "Tools"
         : path === "/"
           ? "Home"
-          : "Office";
+          : (findModuleTitle(path) ?? "BitPolito");
 
 export default function App() {
-  const identity = useIdentity(),
-    location = useLocation();
+  const identity = useIdentity();
+  const location = useLocation();
   const member = !!identity.user && identity.user.role !== "follower";
   const [invite, setInvite] = useState(readInvite);
   useEffect(() => {
@@ -111,6 +121,10 @@ export default function App() {
     return () => cancelAnimationFrame(frame);
   }, [location.pathname, location.search, section]);
 
+  const homeActive = location.pathname === "/" || isAnyModuleRoute(location.pathname);
+  const toolsActive = location.pathname.startsWith("/resources");
+  const profileActive = location.pathname.startsWith("/account");
+
   let content;
   if (!hubEnabled) content = <AndroidOnly />;
   else if (identity.error)
@@ -127,40 +141,55 @@ export default function App() {
     content = (
       <>
         <ConnectionStatus />
-        {!["/", "/office", "/moo"].includes(location.pathname) && <RequestBanner />}
-        <Routes>
-          <Route path="/" element={<OfficePage />} />
-          <Route path="/moo" element={<OfficePage />} />
-          <Route path="/office" element={<OfficePage />} />
-          <Route path="/resources" element={<ResourcesPage />} />
-          <Route path="/account" element={<AccountPage key={identity.user?.id} />} />
-          <Route
-            path="/account/admin"
-            element={
-              <Suspense fallback={<Loading />}>
-                <AdministrationPage />
-              </Suspense>
-            }
-          />
-          {["/events", "/projects", "/workspace", "/admin", "/members"].map((path) => (
-            <Route key={path} path={path} element={<Navigate to="/" replace />} />
-          ))}
-          <Route
-            path="*"
-            element={
-              <Empty
-                title="Page not found"
-                action={
-                  <Link to="/" className="button secondary">
-                    Back to Home
-                  </Link>
-                }
-              >
-                This page doesn’t exist in the app.
-              </Empty>
-            }
-          />
-        </Routes>
+        {location.pathname !== "/" &&
+          modules.map((mod) =>
+            mod.GlobalBanner && !isModuleRoute(location.pathname, mod) ? (
+              <mod.GlobalBanner key={mod.id} />
+            ) : null,
+          )}
+        <motion.div
+          key={location.pathname}
+          className="page-transition"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: pageEase }}
+        >
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            {allModuleRoutes().map((route) => {
+              const Element = route.element;
+              return <Route key={route.path} path={route.path} element={<Element />} />;
+            })}
+            <Route path="/resources" element={<ResourcesPage />} />
+            <Route path="/account" element={<AccountPage key={identity.user?.id} />} />
+            <Route
+              path="/account/admin"
+              element={
+                <Suspense fallback={<Loading />}>
+                  <AdministrationPage />
+                </Suspense>
+              }
+            />
+            {["/events", "/projects", "/workspace", "/admin", "/members"].map((path) => (
+              <Route key={path} path={path} element={<Navigate to="/" replace />} />
+            ))}
+            <Route
+              path="*"
+              element={
+                <Empty
+                  title="Page not found"
+                  action={
+                    <Link to="/" className="button secondary">
+                      Back to Home
+                    </Link>
+                  }
+                >
+                  This page doesn’t exist in the app.
+                </Empty>
+              }
+            />
+          </Routes>
+        </motion.div>
       </>
     );
 
@@ -182,26 +211,46 @@ export default function App() {
           {content}
         </main>
         {member && (
-          <nav className="bottom-nav" aria-label="Main navigation">
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                isActive || ["/office", "/moo"].includes(location.pathname) ? "active" : ""
-              }
-            >
-              <House size={22} />
-              <span>Home</span>
-            </NavLink>
-            <NavLink to="/resources">
-              <Grid2X2 size={22} />
-              <span>Tools</span>
-            </NavLink>
-            <NavLink to="/account">
-              <UserRound size={22} />
-              <span>Profile</span>
-            </NavLink>
-          </nav>
+          <LayoutGroup>
+            <nav className="bottom-nav" aria-label="Main navigation">
+              <NavLink to="/" end className={homeActive ? "active" : ""}>
+                {homeActive && (
+                  <motion.span
+                    layoutId="bottom-nav-pill"
+                    className="nav-pill"
+                    transition={{ type: "spring", stiffness: 460, damping: 34 }}
+                    aria-hidden="true"
+                  />
+                )}
+                <House size={22} />
+                <span>Home</span>
+              </NavLink>
+              <NavLink to="/resources" className={toolsActive ? "active" : ""}>
+                {toolsActive && (
+                  <motion.span
+                    layoutId="bottom-nav-pill"
+                    className="nav-pill"
+                    transition={{ type: "spring", stiffness: 460, damping: 34 }}
+                    aria-hidden="true"
+                  />
+                )}
+                <Grid2X2 size={22} />
+                <span>Tools</span>
+              </NavLink>
+              <NavLink to="/account" className={profileActive ? "active" : ""}>
+                {profileActive && (
+                  <motion.span
+                    layoutId="bottom-nav-pill"
+                    className="nav-pill"
+                    transition={{ type: "spring", stiffness: 460, damping: 34 }}
+                    aria-hidden="true"
+                  />
+                )}
+                <UserRound size={22} />
+                <span>Profile</span>
+              </NavLink>
+            </nav>
+          </LayoutGroup>
         )}
       </div>
       {identity.dialog && (

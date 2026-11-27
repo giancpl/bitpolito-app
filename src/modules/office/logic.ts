@@ -1,4 +1,4 @@
-import type { MooRequest } from "../../shared/contracts";
+import type { MooRequest } from "../../../shared/contracts";
 
 /** Pure office wording and state helpers, shared by views and unit tests. */
 export const isLive = (r: MooRequest) => r.status === "waiting" || r.status === "claimed";

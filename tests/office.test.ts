@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { joinNames, people, requestTitle } from "../src/lib/office";
+import { joinNames, people, requestTitle } from "../src/modules/office/logic";
 import type { MooRequest } from "../shared/contracts";
 
 const base: MooRequest = {

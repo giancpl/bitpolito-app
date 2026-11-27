@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import { useResources } from "../lib/queries";
+import { modules } from "../modules/registry";
 import { Empty, ErrorState, ExpandableText, ExternalLink, Loading } from "./ui";
+
 export function ResourcesPage() {
   const query = useResources();
   return (
@@ -14,16 +16,22 @@ export function ResourcesPage() {
           <p>Your BitPolito toolkit.</p>
         </div>
       </div>
-      <Link className="tool-office-link" to="/office">
-        <div className="resource-icon">
-          <img src="/brand/icon-bell.svg" alt="" />
+      {modules.length > 0 && (
+        <div className="module-links">
+          {modules.map((mod) => (
+            <Link className="tool-office-link" key={mod.id} to={mod.route}>
+              <div className="resource-icon">
+                <img src={`/brand/${mod.icon}`} alt="" />
+              </div>
+              <span>
+                <strong>{mod.title}</strong>
+                <small>{mod.subtitle}</small>
+              </span>
+              <ChevronRight size={18} className="muted" aria-hidden="true" />
+            </Link>
+          ))}
         </div>
-        <span>
-          <strong>Office</strong>
-          <small>Presence & doorbell</small>
-        </span>
-        <ChevronRight size={18} className="muted" aria-hidden="true" />
-      </Link>
+      )}
       {query.isLoading ? (
         <Loading />
       ) : query.error ? (

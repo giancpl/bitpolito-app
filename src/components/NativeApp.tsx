@@ -3,14 +3,13 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { inviteToken, isPreview } from "../lib/hub";
 import { isAndroid, Native, nativeEventData } from "../lib/native";
-
-const REQUEST_ID = /^[\w-]{1,80}$/;
+import { modules } from "../modules/registry";
 
 /** Bridges Android shell events (back, resume, notifications, deep links) into the router. */
 export function NativeLifecycle() {
-  const navigate = useNavigate(),
-    location = useLocation(),
-    client = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const client = useQueryClient();
 
   // The browser simulator signals changes from other tabs with the same event name.
   useEffect(() => {
@@ -34,19 +33,15 @@ export function NativeLifecycle() {
       else navigate("/");
     };
     const refresh = () => void client.invalidateQueries();
-    const openRequest = (event: Event) => {
-      const id = nativeEventData<{ request?: string }>(event)?.request;
-      if (typeof id === "string" && REQUEST_ID.test(id)) navigate(`/moo?request=${id}`);
-    };
     const consumeLaunch = () =>
-      void Native.consumeRequest().then(({ request, invite }) => {
-        if (invite) {
-          const token = inviteToken(invite);
+      void Native.consumeRequest().then((launch) => {
+        if (launch.invite) {
+          const token = inviteToken(launch.invite);
           sessionStorage.setItem("bitpolito.invite", token);
           window.dispatchEvent(new CustomEvent("bitpolito:invite", { detail: { token } }));
           navigate("/");
         }
-        if (request && REQUEST_ID.test(request)) navigate(`/moo?request=${request}`);
+        for (const mod of modules) mod.onLaunch?.(launch, navigate);
       });
     // External links open in the system browser instead of replacing the app WebView.
     const links = (event: MouseEvent) => {
@@ -60,20 +55,33 @@ export function NativeLifecycle() {
         void Native.openExternal({ url: link.href });
       }
     };
+
+    const moduleListeners: Array<{ event: string; listener: (e: Event) => void }> = [];
+    for (const mod of modules) {
+      for (const handler of mod.nativeEvents ?? []) {
+        const listener = (event: Event) => {
+          handler.handle(nativeEventData(event), navigate);
+        };
+        window.addEventListener(handler.event, listener);
+        moduleListeners.push({ event: handler.event, listener });
+      }
+    }
+
     consumeLaunch();
     window.addEventListener("bitpolito:realtime", refresh);
     window.addEventListener("bitpolito:resume", refresh);
     window.addEventListener("bitpolito:resume", consumeLaunch);
     window.addEventListener("bitpolito:back", back);
-    window.addEventListener("bitpolito:request", openRequest);
     document.addEventListener("click", links);
     return () => {
       window.removeEventListener("bitpolito:realtime", refresh);
       window.removeEventListener("bitpolito:resume", refresh);
       window.removeEventListener("bitpolito:resume", consumeLaunch);
       window.removeEventListener("bitpolito:back", back);
-      window.removeEventListener("bitpolito:request", openRequest);
       document.removeEventListener("click", links);
+      for (const { event, listener } of moduleListeners) {
+        window.removeEventListener(event, listener);
+      }
     };
   }, [navigate, location.pathname, client]);
   return null;

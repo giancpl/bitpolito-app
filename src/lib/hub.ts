@@ -2,7 +2,7 @@ import { registerPlugin } from "@capacitor/core";
 import type { EventTemplate } from "nostr-tools/pure";
 import { isAndroid, nativeEventData } from "./native";
 import type { IdentitySigner } from "./signers";
-import type { Invite, MooRequest, MooState, Resource, Role, User } from "../../shared/contracts";
+import type { Invite, Resource, Role, User } from "../../shared/contracts";
 import type { JoinApplication } from "../../shared/hub-contracts";
 
 /** The browser preview runs a local simulator; the Android app runs the Marmot runtime. */
@@ -106,7 +106,6 @@ export const hub: HubClient = {
 };
 
 export type ConnectionState = "connected" | "syncing" | "reconnecting" | "paused" | "simulator";
-export type RequestAction = "claim" | "release" | "inside" | "cancel";
 export type ApplicationStatus =
   "none" | "pending" | "approved" | "declined" | "used" | "expired" | "revoked";
 export interface HubConfiguration {
@@ -121,7 +120,7 @@ export type ResourceInput = Omit<Resource, "id" | "icon" | "updatedAt"> & {
   icon?: string;
 };
 
-/** Typed operations of the encrypted team runtime (native Marmot or browser simulator). */
+/** Typed core operations of the encrypted team runtime (native Marmot or browser simulator). */
 export const team = {
   configuration: () => hub.command<HubConfiguration>("configuration"),
   status: () => hub.command<{ state: ConnectionState; error: string | null }>("status"),
@@ -129,14 +128,6 @@ export const team = {
   logout: () => hub.command<void>("logout"),
   createTeam: () => hub.command<void>("createTeam"),
   saveProfile: (profile: { name: string; about: string }) => hub.command<void>("profile", profile),
-
-  office: () => hub.command<MooState>("moo"),
-  checkIn: () => hub.command<void>("presence", { action: "arrive" }),
-  leave: () => hub.command<void>("presence", { action: "leave" }),
-  ring: (key: string) => hub.command<MooRequest>("ring", { key }),
-  respond: (id: string, action: RequestAction) =>
-    hub.command<MooRequest>("request", { id, action }),
-  alertSettings: (settings: { vibration: boolean }) => hub.command<void>("alertSettings", settings),
 
   resources: () => hub.command<Resource[]>("resources"),
   saveResource: (resource: ResourceInput) =>

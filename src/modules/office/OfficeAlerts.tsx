@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BellOff, BellRing, Volume2 } from "lucide-react";
-import { Native, type AlertsStatus } from "../lib/native";
-import { team } from "../lib/hub";
-import { useIdentity } from "../lib/identity";
-import { useConnection } from "../lib/queries";
-import { Button, Notice } from "./ui";
+import { isAndroid, Native, type AlertsStatus } from "../../lib/native";
+import { useIdentity } from "../../lib/identity";
+import { useConnection } from "../../lib/queries";
+import { Button, Notice } from "../../components/ui";
+import { officeApi } from "./api";
 
 function describe(status: AlertsStatus | undefined) {
   if (!status) return { label: "Checking…", tone: "idle" };
@@ -15,11 +15,11 @@ function describe(status: AlertsStatus | undefined) {
   return { label: "Office alerts are off", tone: "idle" };
 }
 
-export function AndroidNotifications() {
+function AndroidAlertsView() {
   const { user } = useIdentity();
-  const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [hearing, setHearing] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [hearing, setHearing] = useState(false);
   const key = `bitpolito.office.sound-test.${user?.id}`;
   const [heard, setHeard] = useState(() => Number(localStorage.getItem(key)) || 0);
   const device = useQuery({
@@ -123,7 +123,9 @@ export function AndroidNotifications() {
           <input
             type="checkbox"
             checked={device.data?.vibration || false}
-            onChange={(e) => void run(() => team.alertSettings({ vibration: e.target.checked }))}
+            onChange={(e) =>
+              void run(() => officeApi.alertSettings({ vibration: e.target.checked }))
+            }
           />
           Vibrate with the moo
         </label>
@@ -146,4 +148,15 @@ export function AndroidNotifications() {
       )}
     </div>
   );
+}
+
+export function OfficeAlertsSettings() {
+  if (!isAndroid) {
+    return (
+      <Notice tone="info">
+        Office alerts run in the Android app. This browser is a simulator.
+      </Notice>
+    );
+  }
+  return <AndroidAlertsView />;
 }

@@ -1,24 +1,22 @@
-import { team } from "../lib/hub";
-import { isAndroid } from "../lib/native";
-import { backupName, downloadText } from "../lib/download";
-import { AndroidNotifications } from "./AndroidNotifications";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { npubEncode } from "nostr-tools/nip19";
 import {
   ArrowLeft,
-  Bell,
+  CircleHelp,
   Copy,
   Download,
   KeyRound,
-  LogOut,
   LockKeyhole,
+  LogOut,
   ShieldCheck,
   UserRound,
-  CircleHelp,
 } from "lucide-react";
+import { team } from "../lib/hub";
+import { backupName, downloadText } from "../lib/download";
 import { useIdentity } from "../lib/identity";
-import { saveVault, forgetVault, vaultCall } from "../lib/vault";
+import { forgetVault, saveVault, vaultCall } from "../lib/vault";
+import { getProfileSettings } from "../modules/registry";
 import {
   AsyncForm,
   Avatar,
@@ -31,29 +29,35 @@ import {
 } from "./ui";
 import { useConfirm, useToast } from "./Feedback";
 import { Help, isHelpTopic } from "./Help";
-const titles: Record<string, string> = {
+
+const coreTitles: Record<string, string> = {
   profile: "Profile",
   edit: "Edit profile",
-  alerts: "Office alerts",
   identity: "Identity & recovery",
   password: "Change encryption password",
   help: "Help",
 };
+
 export function AccountPage() {
-  const identity = useIdentity(),
-    user = identity.user;
-  const navigate = useNavigate(),
-    [params] = useSearchParams();
-  const requested = params.get("view") || "profile",
-    view = Object.hasOwn(titles, requested) ? requested : "profile";
+  const identity = useIdentity();
+  const user = identity.user;
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const moduleSettings = getProfileSettings();
+  const titles: Record<string, string> = { ...coreTitles };
+  for (const setting of moduleSettings) titles[setting.view] = setting.title;
+
+  const requested = params.get("view") || "profile";
+  const view = Object.hasOwn(titles, requested) ? requested : "profile";
+  const activeModuleSetting = moduleSettings.find((s) => s.view === view);
   const backView =
     view === "password"
       ? "identity"
       : view === "help" && isHelpTopic(params.get("topic"))
         ? "help"
         : "profile";
-  const confirm = useConfirm(),
-    toast = useToast();
+  const confirm = useConfirm();
+  const toast = useToast();
   const [error, setError] = useState("");
   if (!user || identity.dialog) return null;
   const local = identity.vault?.pubkey === user.id;
@@ -120,12 +124,15 @@ export function AccountPage() {
                 detail="Your name and a little about you"
                 onClick={() => changeView("edit")}
               />
-              <SettingsRow
-                icon={<Bell size={20} />}
-                label="Office alerts"
-                detail="Cow sound and notifications"
-                onClick={() => changeView("alerts")}
-              />
+              {moduleSettings.map((setting) => (
+                <SettingsRow
+                  key={setting.view}
+                  icon={setting.icon}
+                  label={setting.label}
+                  detail={setting.detail}
+                  onClick={() => changeView(setting.view)}
+                />
+              ))}
               <SettingsRow
                 icon={<KeyRound size={20} />}
                 label="Identity & recovery"
@@ -162,8 +169,7 @@ export function AccountPage() {
                     if (
                       !(await confirm({
                         title: "Sign out of BitPolito?",
-                        description:
-                          "Office alerts will stop on this phone until you sign in and check in again.",
+                        description: "Alerts will stop on this phone until you sign in again.",
                         action: "Sign out",
                       }))
                     )
@@ -203,14 +209,8 @@ export function AccountPage() {
               <textarea name="about" defaultValue={user.about} rows={3} maxLength={500} />
             </Field>
           </AsyncForm>
-        ) : view === "alerts" ? (
-          isAndroid ? (
-            <AndroidNotifications />
-          ) : (
-            <Notice tone="info">
-              Office alerts run in the Android app. This browser is a simulator.
-            </Notice>
-          )
+        ) : activeModuleSetting ? (
+          <activeModuleSetting.Component />
         ) : view === "password" ? (
           <AsyncForm
             submitLabel="Change password & download backup"
