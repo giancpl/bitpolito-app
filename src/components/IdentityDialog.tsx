@@ -2,18 +2,8 @@ import { isAndroid, Native } from "../lib/native";
 import { setHubSigner, team } from "../lib/hub";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Download,
-  KeyRound,
-  Monitor,
-  Smartphone,
-  Upload,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, KeyRound, Monitor, Smartphone, Upload } from "lucide-react";
 import QRCode from "qrcode";
-import { backupName, downloadText } from "../lib/download";
 import { useIdentity } from "../lib/identity";
 import {
   extensionSigner,
@@ -25,21 +15,21 @@ import {
 import { lockVault, saveVault, vaultCall, localSigner, type VaultRecord } from "../lib/vault";
 import { useConfirm } from "./Feedback";
 import { AsyncForm, Button, Field, FieldError, Modal, Notice, TransitionView } from "./ui";
+
 export function IdentityDialog() {
   const identity = useIdentity();
   const confirm = useConfirm();
-  const [mode, setMode] = useState("choose"),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [generated, setGenerated] = useState<(VaultRecord & { name: string }) | null>(null),
-    [downloaded, setDownloaded] = useState(false),
-    [confirmed, setConfirmed] = useState(false),
-    [qr, setQR] = useState(""),
-    [uri, setURI] = useState(""),
-    [authURL, setAuthURL] = useState("");
-  const [restore, setRestore] = useState(""),
-    [fileSource, setFileSource] = useState("");
-  const source = restore || fileSource;
+  const [mode, setMode] = useState("choose");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [qr, setQR] = useState("");
+  const [uri, setURI] = useState("");
+  const [authURL, setAuthURL] = useState("");
+  const [restore, setRestore] = useState("");
+  const [fileSource, setFileSource] = useState("");
+  const source = (restore || fileSource).trim();
+  const needsBackupPassword = source.startsWith("ncryptsec1");
+
   const abort = useRef(new AbortController());
   const generation = useRef(0);
   const mobile = useRef<ReturnType<typeof mobileURI> | null>(null);
@@ -48,6 +38,7 @@ export function IdentityDialog() {
     queryFn: team.configuration,
   });
   const signerRelays = config.data?.signerRelays || config.data?.relays || [];
+
   useEffect(
     () => () => {
       abort.current.abort();
@@ -55,11 +46,13 @@ export function IdentityDialog() {
     },
     [],
   );
+
   const cancelPending = () => {
     generation.current++;
     abort.current.abort();
-    if (!identity.user) lockVault();
+    if (!identity.user && !identity.vault?.secret) lockVault();
   };
+
   async function run(fn: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -71,6 +64,7 @@ export function IdentityDialog() {
       setBusy(false);
     }
   }
+
   async function connect(signer: IdentitySigner, name?: string) {
     try {
       await identity.connect(signer, name, abort.current.signal);
@@ -79,12 +73,33 @@ export function IdentityDialog() {
       throw e;
     }
   }
+
   async function local(record: VaultRecord, name?: string) {
     await saveVault(record);
     await identity.refreshVault();
     identity.unlock();
     await connect(localSigner(record.pubkey), name);
   }
+
+  async function continueSaved() {
+    const saved = identity.vault;
+    if (!saved) return;
+    if (saved.secret) {
+      await run(async () => {
+        const pubkey = await vaultCall<string>("loadSecret", { secret: saved.secret });
+        identity.unlock();
+        if (identity.user?.id === pubkey) {
+          setHubSigner(localSigner(pubkey));
+          identity.close();
+        } else {
+          await connect(localSigner(pubkey));
+        }
+      });
+    } else {
+      await choose("unlock");
+    }
+  }
+
   const choose = async (next: string) => {
     if (
       document.querySelector('[role="dialog"] form[data-dirty="true"]') &&
@@ -106,101 +121,57 @@ export function IdentityDialog() {
     setMode(next);
     setError("");
   };
+
   return (
     <Modal
       title={
-        generated
-          ? "Keep your identity safe"
-          : mode === "choose"
-            ? "Welcome to BitPolito"
-            : mode === "create"
-              ? "Create your identity"
-              : mode === "unlock"
-                ? "Unlock your identity"
-                : mode === "restore"
-                  ? "Restore your identity"
-                  : mode === "existing"
-                    ? "Use my Nostr identity"
-                    : "Connect your signer"
+        mode === "choose"
+          ? "Welcome to BitPolito"
+          : mode === "create"
+            ? "Create your profile"
+            : mode === "unlock"
+              ? "Unlock your identity"
+              : mode === "restore"
+                ? "Restore your identity"
+                : mode === "existing"
+                  ? "Use my Nostr identity"
+                  : "Connect your signer"
       }
       onClose={identity.close}
       onClosing={cancelPending}
       className="identity-panel"
-      beforeClose={async () =>
-        !generated ||
-        confirmed ||
-        (await confirm({
-          title: "Leave before saving your backup?",
-          description: "You need the encrypted backup and its password to recover this identity.",
-          action: "Leave setup",
-          danger: true,
-        }))
-      }
     >
-      {mode !== "choose" && !generated && (
-        <button className="text-button" onClick={() => choose("choose")}>
+      {mode !== "choose" && (
+        <button className="text-button" onClick={() => void choose("choose")}>
           <ArrowLeft size={18} />
           All sign-in options
         </button>
       )}
-      <TransitionView id={generated ? "backup" : mode}>
-        {generated ? (
-          <div className="form">
-            <div className="wizard-progress" aria-label="Step 2 of 2">
-              <span />
-              <span />
-            </div>
-            <p className="step-label">Step 2 of 2 · Recovery backup</p>
-            <img className="identity-cow" src="/brand/cow-icon-blue.svg" alt="" />
-            <p>
-              Your keys belong to you. Recovery requires both this encrypted backup and its
-              password.
-            </p>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                void run(async () => {
-                  await downloadText(generated.encrypted, backupName(generated.pubkey));
-                  setDownloaded(true);
-                })
-              }
-            >
-              <Download size={18} />
-              Download encrypted backup{downloaded && <Check size={18} />}
-            </Button>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={confirmed}
-                onChange={(e) => setConfirmed(e.target.checked)}
-              />
-              I saved my backup and understand that BitPolito cannot reset its password.
-            </label>
-            <Button
-              busy={busy}
-              disabled={!downloaded || !confirmed}
-              onClick={() => void run(() => local(generated, generated.name))}
-            >
-              Continue to BitPolito
-              <ArrowRight size={18} />
-            </Button>
-          </div>
-        ) : mode === "choose" ? (
+      <TransitionView id={mode}>
+        {mode === "choose" ? (
           <>
             <p className="muted">
-              A familiar name. Your own keys. Everything you need to join the office.
+              A familiar name. Your own keys. Everything you need to join the team.
             </p>
             <p className="small muted privacy-note">
-              Private keys stay on this device or in your signer. Your name and profile are shared
-              only inside the encrypted team, never published publicly.
+              Your private key stays protected on this device or in your Nostr signer. Your profile
+              is shared only inside the encrypted team.
             </p>
             <div className="signin-options">
               {identity.vault && (
-                <button onClick={() => choose("unlock")} className="saved-key-option">
+                <button
+                  disabled={busy}
+                  onClick={() => void continueSaved()}
+                  className="saved-key-option"
+                >
                   <KeyRound />
                   <span>
-                    <strong>Unlock saved identity</strong>
-                    <small>Continue with the keys on this device</small>
+                    <strong>
+                      {identity.vault.secret
+                        ? "Continue with saved identity"
+                        : "Unlock saved identity"}
+                    </strong>
+                    <small>Use the personal profile saved on this device</small>
                   </span>
                   <ArrowRight />
                 </button>
@@ -211,82 +182,61 @@ export function IdentityDialog() {
               >
                 <KeyRound />
                 <span>
-                  <strong>Create an identity</strong>
-                  <small>New here? Start with a name and a secure backup</small>
+                  <strong>Create a profile</strong>
+                  <small>New here? Just enter your name to get started</small>
                 </span>
                 <ArrowRight />
               </button>
-              <button onClick={() => choose("existing")}>
+              <button onClick={() => void choose("existing")}>
                 <Monitor />
                 <span>
                   <strong>Use my Nostr identity</strong>
                   <small>
                     {isAndroid
-                      ? "Use an Android or remote signer"
+                      ? "Connect Amber or another Nostr signer"
                       : "Connect an extension or mobile signer"}
                   </small>
                 </span>
                 <ArrowRight />
               </button>
             </div>
-            <Button variant="ghost" onClick={() => choose("restore")}>
+            <Button variant="ghost" onClick={() => void choose("restore")}>
               <Upload size={18} />
-              Restore identity
+              Import existing key (nsec)
             </Button>
           </>
         ) : mode === "create" ? (
           <AsyncForm
-            submitLabel="Create identity"
+            submitLabel="Continue to BitPolito"
             onSubmit={async (data) => {
               if (
                 identity.vault &&
                 !(await confirm({
                   title: "Replace the saved identity?",
                   description:
-                    "Keep its backup and password before continuing. This changes the keys stored on this device.",
-                  action: "Replace saved keys",
+                    "Make sure you saved your previous key if you still need it. This replaces the local key on this device.",
+                  action: "Replace saved key",
                   danger: true,
                 }))
               )
                 return;
-              const password = String(data.get("password"));
-              if (password !== data.get("confirm"))
-                throw new FieldError({ confirm: "Passwords do not match" });
-              const record = await vaultCall<VaultRecord>("create", {
-                password,
-              });
-              setGenerated({ ...record, name: String(data.get("name")) });
+              const name = String(data.get("name")).trim();
+              if (!name) throw new FieldError({ name: "Enter your name" });
+              const record = await vaultCall<VaultRecord>("createQuick");
+              await local(record, name);
             }}
           >
-            <div className="wizard-progress" aria-label="Step 1 of 2">
-              <span />
-              <span className="step-next" />
-            </div>
-            <p className="step-label">Step 1 of 2 · Your identity</p>
+            <p className="muted">
+              Your key is created automatically and stored safely on this device. You can export a
+              backup anytime from your profile.
+            </p>
             <Field label="Your name">
-              <input name="name" required maxLength={60} autoComplete="nickname" />
-            </Field>
-            <Field
-              label="Key encryption password"
-              help="At least 12 characters. This encrypts your keys on this device; it is never sent to BitPolito."
-            >
               <input
-                name="password"
-                type="password"
+                name="name"
                 required
-                minLength={12}
-                maxLength={200}
-                autoComplete="new-password"
-              />
-            </Field>
-            <Field label="Confirm password">
-              <input
-                name="confirm"
-                type="password"
-                required
-                minLength={12}
-                maxLength={200}
-                autoComplete="new-password"
+                maxLength={60}
+                autoComplete="nickname"
+                placeholder="e.g. Marco Rossi"
               />
             </Field>
           </AsyncForm>
@@ -294,7 +244,7 @@ export function IdentityDialog() {
           <AsyncForm
             submitLabel="Unlock and continue"
             onSubmit={async (data) => {
-              if (!identity.vault) throw Error("No saved identity.");
+              if (!identity.vault?.encrypted) throw Error("No encrypted identity found.");
               const pubkey = await vaultCall<string>("unlock", {
                 encrypted: identity.vault.encrypted,
                 password: String(data.get("password")),
@@ -306,11 +256,8 @@ export function IdentityDialog() {
               } else await connect(localSigner(pubkey));
             }}
           >
-            <p className="muted">
-              Unlock the keys saved on this device. Your app session can remain connected while your
-              keys are locked.
-            </p>
-            <Field label="Key encryption password">
+            <p className="muted">Unlock the password-protected backup saved on this device.</p>
+            <Field label="Backup password">
               <input name="password" type="password" required autoComplete="current-password" />
             </Field>
           </AsyncForm>
@@ -318,39 +265,36 @@ export function IdentityDialog() {
           <AsyncForm
             submitLabel="Restore and continue"
             onSubmit={async (data) => {
-              const file = data.get("backup") as File,
-                pasted = String(data.get("key") || "").trim();
+              const file = data.get("backup") as File;
+              const pasted = String(data.get("key") || "").trim();
               if (file?.size && pasted) throw Error("Choose a file or paste a key, not both.");
               if (file?.size > 512) throw Error("Choose a valid small key backup.");
               const key = file?.size ? (await file.text()).trim() : pasted;
               if (!key.startsWith("ncryptsec1") && !key.startsWith("nsec1"))
                 throw new FieldError({
-                  key: "Use an ncryptsec backup or nsec private key; an npub alone cannot sign in.",
+                  key: "Paste a private nsec1 key or an ncryptsec1 backup; an npub alone cannot sign in.",
                 });
-              const password = String(data.get("password"));
-              if (key.startsWith("nsec1") && password !== data.get("confirm"))
-                throw new FieldError({ confirm: "Passwords do not match" });
               if (
                 identity.vault &&
                 !(await confirm({
                   title: "Replace the saved identity?",
                   description:
-                    "Keep its backup and password before continuing. This changes the keys stored on this device.",
-                  action: "Replace saved keys",
+                    "Keep a copy of your current key if you still need it. This changes the key stored on this device.",
+                  action: "Replace saved key",
                   danger: true,
                 }))
               )
                 return;
               const record = await vaultCall<VaultRecord>("restore", {
                 key,
-                password,
+                password: String(data.get("password") || ""),
               });
               await local(record);
             }}
           >
             <p className="muted">
-              Restore an encrypted backup or import an existing private key. Everything is processed
-              on this device.
+              Paste your Nostr private key (<code>nsec1…</code>) or load an existing backup file.
+              Everything stays on this device.
             </p>
             {isAndroid ? (
               <Button
@@ -361,7 +305,7 @@ export function IdentityDialog() {
                   })
                 }
               >
-                Choose encrypted backup
+                Choose backup file
               </Button>
             ) : (
               <Field label="Backup file">
@@ -381,33 +325,21 @@ export function IdentityDialog() {
                 name="key"
                 value={restore}
                 onChange={(e) => setRestore(e.target.value)}
+                placeholder="nsec1… or ncryptsec1…"
                 autoComplete="off"
                 autoCapitalize="none"
                 spellCheck={false}
                 rows={3}
               />
             </Field>
-            <Field
-              label={source.startsWith("nsec1") ? "New encryption password" : "Backup password"}
-            >
-              <input
-                name="password"
-                type="password"
-                required
-                minLength={source.startsWith("nsec1") ? 12 : undefined}
-                maxLength={200}
-                autoComplete="off"
-              />
-            </Field>
-            {source.startsWith("nsec1") && (
-              <Field label="Confirm password">
+            {needsBackupPassword && (
+              <Field label="Backup password">
                 <input
-                  name="confirm"
+                  name="password"
                   type="password"
                   required
-                  minLength={12}
                   maxLength={200}
-                  autoComplete="new-password"
+                  autoComplete="off"
                 />
               </Field>
             )}
@@ -425,11 +357,11 @@ export function IdentityDialog() {
               <Monitor />
               <span>
                 <strong>{isAndroid ? "Android signer" : "Browser extension"}</strong>
-                <small>Approve access in your Nostr signer</small>
+                <small>Approve access in your Nostr signer (e.g. Amber)</small>
               </span>
               <ArrowRight />
             </button>
-            <button onClick={() => choose("remote")}>
+            <button onClick={() => void choose("remote")}>
               <Smartphone />
               <span>
                 <strong>Remote or mobile signer</strong>
@@ -467,7 +399,7 @@ export function IdentityDialog() {
                   Open in your signer
                 </a>
                 <p className="muted">Waiting for approval…</p>
-                <Button variant="secondary" onClick={() => choose("remote")}>
+                <Button variant="secondary" onClick={() => void choose("remote")}>
                   Cancel connection
                 </Button>
               </div>

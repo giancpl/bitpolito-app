@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { hub, hubEnabled, clearHubSigner, team } from "./hub";
-import { lockVault, readVault, type VaultRecord } from "./vault";
+import { hub, hubEnabled, clearHubSigner, setHubSigner, team } from "./hub";
+import { localSigner, lockVault, readVault, vaultCall, type VaultRecord } from "./vault";
 import type { IdentitySigner } from "./signers";
 import type { User } from "../../shared/contracts";
 
-/** Local keys lock after this much inactivity; the team connection stays up. */
+/** Legacy password-locked keys lock after this much inactivity; passwordless device keys stay ready. */
 const AUTO_LOCK_MS = 15 * 60 * 1000;
 
 interface IdentityState {
@@ -28,11 +28,11 @@ const Context = createContext<IdentityState>(null!);
 export const useIdentity = () => useContext(Context);
 
 export function IdentityProvider({ children }: { children: ReactNode }) {
-  const client = useQueryClient(),
-    signer = useRef<IdentitySigner | null>(null);
-  const [vault, setVault] = useState<VaultRecord | null>(null),
-    [unlocked, setUnlocked] = useState(false),
-    [dialog, setDialog] = useState(false);
+  const client = useQueryClient();
+  const signer = useRef<IdentitySigner | null>(null);
+  const [vault, setVault] = useState<VaultRecord | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
+  const [dialog, setDialog] = useState(false);
   const me = useQuery({
     queryKey: ["me"],
     queryFn: team.me,
@@ -49,7 +49,34 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     void refreshVault();
     return () => lockVault();
   }, []);
+
+  const userId = me.data?.user?.id;
+  // Passwordless local keys stored in device secure storage unlock automatically on launch.
   useEffect(() => {
+    if (!vault?.secret || unlocked) return;
+    let active = true;
+    void vaultCall<string>("loadSecret", { secret: vault.secret })
+      .then((pubkey) => {
+        if (!active) return;
+        setUnlocked(true);
+        if (userId === pubkey) setHubSigner(localSigner(pubkey));
+      })
+      .catch(() => {
+        /* ignore corrupted local vault; user can restore or recreate */
+      });
+    return () => {
+      active = false;
+    };
+  }, [vault?.secret, unlocked, userId]);
+
+  useEffect(() => {
+    if (vault?.secret && unlocked && userId === vault.pubkey) {
+      setHubSigner(localSigner(vault.pubkey));
+    }
+  }, [vault?.secret, vault?.pubkey, unlocked, userId]);
+
+  useEffect(() => {
+    if (!vault?.encrypted || vault.secret) return;
     let last = Date.now();
     const activity = () => (last = Date.now());
     const check = () => {
@@ -67,11 +94,12 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", check);
       window.removeEventListener("bitpolito:resume", check);
     };
-  }, []);
+  }, [vault?.encrypted, vault?.secret]);
+
   const signedOut = !!me.data && !me.data.user;
   useEffect(() => {
-    if (signedOut) lock();
-  }, [signedOut]);
+    if (signedOut && !vault?.secret) lock();
+  }, [signedOut, vault?.secret]);
 
   async function resetSession() {
     client.removeQueries({ predicate: (query) => query.queryKey[0] !== "me" });
@@ -93,7 +121,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     try {
       await team.logout();
     } finally {
-      lock();
+      if (!vault?.secret) lock();
       clearHubSigner();
       await signer.current?.close?.();
       signer.current = null;

@@ -114,6 +114,8 @@ export interface HubConfiguration {
   relays: string[];
   signerRelays?: string[];
   timezone: string;
+  ownerPubkey?: string | null;
+  adminPubkeys?: string[];
 }
 export type ResourceInput = Omit<Resource, "id" | "icon" | "updatedAt"> & {
   id?: string;

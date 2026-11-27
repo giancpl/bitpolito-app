@@ -1,126 +1,128 @@
 # BitPolito Hub
 
-An Android-first encrypted team app: **Home · Tools · Profile**.
-Nostr provides identity and relay delivery; Marmot/MLS protects the private team.
-The Android app coordinates presence and the office doorbell without a BitPolito
-application server. All interface text, notifications and member guides are English.
+A private Android space for the BitPolito team: **Home · Tools · Profile**.
+Check who is in the office, ring the doorbell and share useful tools and resources.
+The interface is entirely in English, with BitPolito’s blue, typography and illustrations.
 
-## Start here
+Nostr provides identity and relay delivery. Marmot/MLS encrypts the team’s data.
+The team APK uses external relays: no BitPolito backend, Firebase, hosting or PC
+needs to stay running. The browser is a local UX simulator.
 
-- [Member and administrator guide](docs/distributed-guide.md)
-- [Android build and testing](docs/android-guide.md)
-- [Archived server installation and catalogue migration](legacy/README.md)
+## Download the Android test app
+
+**[Download BitPolito for Android (ARM64 APK)](https://github.com/giancpl/bitpolito-app/raw/refs/heads/improve/distributed-cleanup/downloads/bitpolito-team-arm64-v8a.apk)**
+
+[SHA-256 checksum](downloads/bitpolito-team-arm64-v8a.apk.sha256) ·
+[Build details](downloads/build-info.json) · [Installation guide](docs/android-guide.md)
+
+This is a debug-signed test build, **not a GitHub release or store release**.
+It supports Android 8+ on ARM64 phones, including the Pixel 9 Pro. Older 32-bit
+phones and x86 emulators need a different build. The file is served directly by
+GitHub; you do not need an Actions account or a local build environment.
+
+1. Open the APK link on your Android phone and download it.
+2. Open the file and allow installation from that browser/files app if Android asks.
+3. Create a dedicated test identity or connect a compatible Nostr signer.
+4. Join through a personal invitation. Only the first administrator creates the
+   team; everyone else joins that existing team after approval.
+5. Save your identity backup under **Profile → Identity & recovery**.
+
+Install future updates over the existing app. Do not uninstall to solve an
+update problem: uninstalling removes local identity and group state. The test
+APK retains the local debug signing certificate; its private keystore is not
+in Git. Verify the downloaded file against the checksum before installing.
+
+## What to try
+
+- **Home:** check in, see present teammates and ring the office when outside.
+- **Doorbell:** several present members can respond. Only the arriving member
+  confirms **I’m inside**, which checks them in. **I’m leaving** is immediate.
+- **Tools:** browse the team catalogue; administrators can add, edit and archive entries.
+- **Profile:** edit your internal profile, configure alerts, recover your identity
+  and access Help. Administrators also manage invitations and members.
+
+Presence clears at the next midnight in `Europe/Rome`. It is manually declared;
+there is no GPS tracking. Public Nostr profiles are not updated automatically.
+
+Office alerts use a voluntary native listener and a persistent notification.
+Volume, silent mode, Do Not Disturb, Bluetooth and Android battery restrictions
+still apply. Physical background reliability and the three-phone, PC-off pilot
+remain to be verified. See the [verification record](docs/verification.md).
+
+## Identity and recovery
+
+The current onboarding supports passwordless local keys and external signers
+(NIP-55 on Android, NIP-46 remotely). Android Keystore protects local vault
+records at rest. Passwordless keys load automatically; they do not use the
+legacy password-encrypted vault’s 15-minute unlock policy.
+
+**A downloaded `nsec` backup is an unencrypted private key.** Anyone with that
+file can act as you. Keep it in a trusted password manager or other protected
+storage; never attach it to GitHub issues or send it to another member. Backup
+is available from Profile but is no longer a mandatory onboarding step.
+Legacy NIP-49 encrypted backups can still be restored with their password.
+Signing runs in a worker, but the passwordless flow also passes key material
+through the app when saving or restoring the local vault.
+
+An identity backup does not contain MLS state or recover private group history.
+The first version supports one active phone per member: replacing it requires
+administrator approval. Keep two administrators on separate phones before a
+shared pilot. See the [member and administrator guide](docs/distributed-guide.md).
+
+## Run the browser simulator
+
+```bash
+npm ci
+npm run dev
+```
+
+Open the printed local URL and select Alice, Bob, Cara or Drew. Multiple tabs
+can try approvals and simultaneous door responses. This uses disposable browser
+state, not real Marmot encryption. Do not import personal keys into the preview.
+
+## Build Android locally
+
+Node 22.12+ is required. The setup installs an isolated JDK 21 and Android SDK 36
+under `.android-local`, without replacing system Java.
 
 ```bash
 npm ci
 npm run android:setup
 npm run marmot:setup
-npm run dev:relays
-```
-
-In another terminal:
-
-```bash
-npm run android:build
-.android-local/sdk/platform-tools/adb reverse tcp:3480 tcp:3480
-.android-local/sdk/platform-tools/adb reverse tcp:3481 tcp:3481
-npm run android:install
-```
-
-The sandbox APK uses two persistent loopback Nostr relays, disposable identities,
-and a separate encrypted runtime. It does not use the former port 3280 backend.
-USB/ADB is needed only for the local relay sandbox. The team APK uses external
-secure relays and does not require your PC:
-
-```bash
 npm run android:build -- team
 ```
 
-No hosting, domain, Firebase project or application backend is required by that
-APK. External relay availability and Android background behavior require a real
-phone pilot. Debug APKs are not store releases.
-
-## Browser preview
+The default team output is a universal APK at `artifacts/bitpolito-team.apk`.
+To reproduce the smaller download build:
 
 ```bash
-npm run dev
+BITPOLITO_ANDROID_ABI=arm64-v8a npm run android:build -- team
 ```
 
-Open the Vite URL and select Alice, Bob, Cara or Drew. Open several tabs to try
-multiple responders and approvals. This is a clearly labelled local UX simulator,
-not a browser Marmot implementation. It uses disposable fixtures and local
-browser state; never enter personal keys for routine preview tests.
+For disposable native tests, run `npm run dev:relays`, build with
+`npm run android:build`, reverse ports 3480/3481 over ADB and install the sandbox
+APK. That sandbox needs the local relays; the downloadable team APK does not.
+Full commands are in the [Android guide](docs/android-guide.md).
 
-## Identity and membership
+Optional build-time authority configuration uses public keys only:
+`BITPOLITO_OWNER_NPUB` and `BITPOLITO_ADMIN_NPUBS` configure the native runtime;
+`VITE_OWNER_NPUB` and `VITE_ADMIN_NPUBS` configure frontend defaults. Use matching
+values when setting both. Entries may be hex or `npub`, separated by commas,
+semicolons or whitespace. Empty defaults allow a tester to create a separate
+team; they do not automatically connect to an official BitPolito group.
 
-Existing encrypted NIP-49 vaults are retained. Private identity keys stay in the
-signing worker; Android Keystore protects the native encrypted MLS runtime.
-Identity backup is mandatory when generating keys. Android NIP-55 and remote
-NIP-46 signers require NIP-44 support. Name and description are private group
-operations; BitPolito does not publish public profile/contact updates.
-
-One active phone per member. A restored identity needs administrator approval
-for its new phone. NIP-49 does not restore MLS history. Invitations last seven
-days and require approval from the administrator who issued them.
-
-## Office
-
-Check in manually until you leave or the next midnight in Europe/Rome. Several
-members may respond to one door request. Only the arriving member confirms
-**I’m inside**, which completes the request and checks them in. Leaving is
-immediate; delayed retries cannot check them back in.
-
-The native listener uses a persistent Android notification while enabled and
-checked in, or while a door request is active. It plays the short licensed cow
-sound only for present members. Android can stop it; volume, silent mode,
-Bluetooth, Do Not Disturb and battery restrictions remain device-controlled.
-No Firebase gateway, hidden alarm or automatic volume changes are used.
-
-## Preservation and migration
-
-The former Fastify/SQLite server, its PWA and its deployment files were removed
-from this branch and are preserved at the git tag `server-final`. Existing
-databases are not reset, migrated into public relays, or deleted. To move the
-catalogue, export it read-only and import it explicitly; see
-[the archive notes](legacy/README.md).
-
-## Development
-
-| Command                           | What it does                                                   |
-| --------------------------------- | -------------------------------------------------------------- |
-| `npm run dev`                     | Browser simulator with disposable identities                   |
-| `npm run dev:relays`              | Two persistent loopback Nostr relays for the sandbox APK       |
-| `npm run check`                   | Typecheck, lint, format check, unit tests and production build |
-| `npm run test:e2e`                | Playwright workflows against the browser simulator             |
-| `npm run format`                  | Format the TypeScript and CSS sources with Prettier            |
-| `npm run android:build [-- team]` | Sandbox (default) or team debug APK                            |
-
-Code layout:
-
-- `src/lib/hub.ts` — the typed client (`team.*`) for every encrypted team
-  operation. On Android it calls the native Marmot runtime; in the browser
-  preview it calls the local simulator, which never ships in Android builds.
-- `src/lib/queries.ts` — shared React Query hooks and cache keys.
-- `src/lib/office.ts` — pure door-request wording, covered by unit tests.
-- `android/app/src/main/java/it/bitpolito/hub/` — the native runtime
-  (`HubRuntime`), Capacitor bridges and the office listener service.
-
-The interface uses a clean light theme built around BitPolito electric blue and light surfaces. CI (`.github/workflows/ci.yml`)
-runs the web checks, the simulator workflows and the Android sandbox build with
-its JVM tests on every pull request.
-
-## Verification
+## Development and checks
 
 ```bash
 npm run check
 npm run test:e2e
-npm run android:build
-npm run test:android:hub
-npm run test:android:recovery
-npm run test:android:protocol
 ```
 
-MarmotKit is pinned to `0.19.0`, source
-`3fce95465cdea1edc8456dbd1c6691d1c8dc1f2e`, with a verified native archive hash.
-Generated Kotlin and JNI libraries are installed together under the ignored
-`.android-local/marmot` directory. [Upstream release](https://github.com/marmot-protocol/mdk/releases/tag/marmotkit-v0.19.0).
+Native workflow, recovery and protocol checks are documented in the Android
+guide. `src/lib/hub.ts` is the typed team client; native Marmot integration lives
+in `android/app/src/main/java/it/bitpolito/hub/`. No private keys, databases,
+local toolchains or signing credentials belong in Git.
+
+MarmotKit is pinned to **0.19.0**, with a checksum-verified native archive.
+See [dependency provenance](docs/marmot-dependency.md). The former server/PWA
+installation is preserved at `server-final`; see [archive and catalogue migration](legacy/README.md).

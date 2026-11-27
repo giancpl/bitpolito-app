@@ -2,9 +2,11 @@
 
 ## Join your team
 
-Open your personal invitation in the Android app. Create an identity and save
-its encrypted backup, or connect a Nostr signer with NIP-44 support. Keep the
-backup password separately: BitPolito cannot reset it.
+Open your personal invitation in the Android app. Create a local identity or
+connect a Nostr signer with NIP-44 support. Save a backup from **Profile →
+Identity & recovery** after joining. New local identities are passwordless;
+their downloaded nsec backups are unencrypted private keys. Store them securely
+and never share them. Older NIP-49 backups still require their password.
 
 Request access and keep the app open. The administrator who issued your
 invitation approves your phone from their app. An invitation lasts seven days;
@@ -49,10 +51,11 @@ pretends to be an alarm. Outside members do not automatically hear a moo.
 
 ## Identity and a new phone
 
-**Profile → Identity & recovery** contains public identity copying, encrypted
-backup, restore, password change and local key removal. External signers manage
-their own backup. Signing keys lock after inactivity; this is separate from the
-native MLS state needed to receive office updates.
+**Profile → Identity & recovery** contains public identity copying, key backup,
+restore and local key removal. Legacy password-encrypted vaults also offer
+encrypted backup and password change. New passwordless vaults load automatically
+from Android Keystore-protected storage; the legacy 15-minute password-unlock
+policy does not apply to them. External signers manage their own backup.
 
 Restore your identity on a new phone and sign out on the previous phone. If
 another Marmot installation is advertised, BitPolito shows a separate **Use this
@@ -105,8 +108,8 @@ membership in the new Marmot team.
 
 ## Recovery boundaries
 
-Your encrypted NIP-49 file proves control of your Nostr identity after you unlock
-it. It does **not** contain MLS state, team membership, invitations or private
+Your nsec file, or a NIP-49 file unlocked with its password, restores control
+of your Nostr identity. An nsec backup has no password protection. It does **not** contain MLS state, team membership, invitations or private
 history. Keep its password separately. Neither relay operators nor team
 administrators can recover a forgotten identity password.
 

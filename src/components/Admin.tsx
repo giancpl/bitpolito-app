@@ -40,6 +40,8 @@ export function Administration() {
     confirm = useConfirm(),
     toast = useToast();
   const client = useQueryClient();
+  const config = useQuery({ queryKey: ["config"], queryFn: team.configuration });
+  const ownerPubkey = config.data?.ownerPubkey || null;
   const [tab, setTab] = useState("invites"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -202,65 +204,69 @@ export function Administration() {
                         {u.id.slice(0, 8)}…{u.id.slice(-4)}
                       </code>
                     </div>
-                    <DropdownMenu.Root>
-                      <DropdownMenu.Trigger asChild>
-                        <Button
-                          variant="secondary"
-                          disabled={busy}
-                          aria-label={`Role for ${u.name || u.id}`}
-                        >
-                          {u.role === "admin"
-                            ? "Administrator"
-                            : u.role === "member"
-                              ? "Member"
-                              : "No access"}
-                          <ChevronDown size={16} />
-                        </Button>
-                      </DropdownMenu.Trigger>
-                      <DropdownMenu.Portal>
-                        <DropdownMenu.Content className="menu-content" align="end" sideOffset={6}>
-                          {(["member", "admin", "follower"] as const)
-                            .filter((role) => role !== u.role)
-                            .map((role) => (
-                              <DropdownMenu.Item
-                                key={role}
-                                className={`menu-item ${role === "follower" ? "danger-text" : ""}`}
-                                onSelect={() =>
-                                  void run(async () => {
-                                    if (
-                                      !(await confirm({
-                                        title:
-                                          role === "follower"
-                                            ? `Revoke ${u.name || "this member"}’s access?`
-                                            : role === "admin"
-                                              ? `Make ${u.name || "this member"} an administrator?`
-                                              : `Set ${u.name || "this member"} as a member?`,
-                                        description:
-                                          role === "follower"
-                                            ? "They will lose access to future encrypted team updates after synchronization. Data they already received cannot be erased."
-                                            : role === "admin"
-                                              ? "They will be able to manage members, invitations and resources."
-                                              : "Administrator privileges will be removed. The last administrator cannot be removed.",
-                                        action:
-                                          role === "follower" ? "Revoke access" : "Change role",
-                                        danger: role === "follower",
-                                      }))
-                                    )
-                                      return;
-                                    await team.setRole(u.id, role);
-                                  }, "Member access updated.")
-                                }
-                              >
-                                {role === "admin"
-                                  ? "Make administrator"
-                                  : role === "member"
-                                    ? "Set as member"
-                                    : "Revoke access"}
-                              </DropdownMenu.Item>
-                            ))}
-                        </DropdownMenu.Content>
-                      </DropdownMenu.Portal>
-                    </DropdownMenu.Root>
+                    {ownerPubkey && u.id === ownerPubkey ? (
+                      <span className="pill">Team Owner</span>
+                    ) : (
+                      <DropdownMenu.Root>
+                        <DropdownMenu.Trigger asChild>
+                          <Button
+                            variant="secondary"
+                            disabled={busy}
+                            aria-label={`Role for ${u.name || u.id}`}
+                          >
+                            {u.role === "admin"
+                              ? "Administrator"
+                              : u.role === "member"
+                                ? "Member"
+                                : "No access"}
+                            <ChevronDown size={16} />
+                          </Button>
+                        </DropdownMenu.Trigger>
+                        <DropdownMenu.Portal>
+                          <DropdownMenu.Content className="menu-content" align="end" sideOffset={6}>
+                            {(["member", "admin", "follower"] as const)
+                              .filter((role) => role !== u.role)
+                              .map((role) => (
+                                <DropdownMenu.Item
+                                  key={role}
+                                  className={`menu-item ${role === "follower" ? "danger-text" : ""}`}
+                                  onSelect={() =>
+                                    void run(async () => {
+                                      if (
+                                        !(await confirm({
+                                          title:
+                                            role === "follower"
+                                              ? `Revoke ${u.name || "this member"}’s access?`
+                                              : role === "admin"
+                                                ? `Make ${u.name || "this member"} an administrator?`
+                                                : `Set ${u.name || "this member"} as a member?`,
+                                          description:
+                                            role === "follower"
+                                              ? "They will lose access to future encrypted team updates after synchronization. Data they already received cannot be erased."
+                                              : role === "admin"
+                                                ? "They will be able to manage members, invitations and resources."
+                                                : "Administrator privileges will be removed. The last administrator cannot be removed.",
+                                          action:
+                                            role === "follower" ? "Revoke access" : "Change role",
+                                          danger: role === "follower",
+                                        }))
+                                      )
+                                        return;
+                                      await team.setRole(u.id, role);
+                                    }, "Member access updated.")
+                                  }
+                                >
+                                  {role === "admin"
+                                    ? "Make administrator"
+                                    : role === "member"
+                                      ? "Set as member"
+                                      : "Revoke access"}
+                                </DropdownMenu.Item>
+                              ))}
+                          </DropdownMenu.Content>
+                        </DropdownMenu.Portal>
+                      </DropdownMenu.Root>
+                    )}
                   </div>
                 ))}
               </div>

@@ -7,6 +7,9 @@ def releaseSetting = { String name ->
     def value = System.getenv(name) ?: project.findProperty(name)?.toString()
     value?.trim() ? value.trim() : null
 }
+def teamOwnerNpub = releaseSetting('BITPOLITO_OWNER_NPUB') ?: ''
+def teamAdminNpubs = releaseSetting('BITPOLITO_ADMIN_NPUBS') ?: ''
+def quoteBuildConfig = { String v -> '"' + v.replace('\\', '\\\\').replace('"', '\\"') + '"' }
 def releaseKeystore = releaseSetting('BITPOLITO_KEYSTORE')
 def releaseSigning = releaseKeystore != null &&
         ['BITPOLITO_KEYSTORE_PASSWORD', 'BITPOLITO_KEY_ALIAS', 'BITPOLITO_KEY_PASSWORD'].every { releaseSetting(it) != null }
@@ -21,6 +24,13 @@ android {
         applicationId "it.bitpolito.hub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        def requestedAbi = project.findProperty('androidAbi')?.toString()
+        if (requestedAbi != null) {
+            if (!(requestedAbi in ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'])) {
+                throw new GradleException('Unsupported androidAbi')
+            }
+            ndk { abiFilters requestedAbi }
+        }
         versionCode((project.findProperty('versionCode') ?: '1').toString().toInteger())
         versionName((project.findProperty('versionName') ?: '1.0').toString())
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -49,10 +59,14 @@ android {
             applicationIdSuffix ".sandbox"
             versionNameSuffix "-sandbox"
             buildConfigField "boolean", "SANDBOX", "true"
+            buildConfigField "String", "OWNER_NPUB", '""'
+            buildConfigField "String", "ADMIN_NPUBS", '""'
         }
         team {
             dimension "environment"
             buildConfigField "boolean", "SANDBOX", "false"
+            buildConfigField "String", "OWNER_NPUB", quoteBuildConfig(teamOwnerNpub)
+            buildConfigField "String", "ADMIN_NPUBS", quoteBuildConfig(teamAdminNpubs)
         }
     }
     signingConfigs {

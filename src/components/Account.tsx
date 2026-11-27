@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { npubEncode } from "nostr-tools/nip19";
 import {
   ArrowLeft,
@@ -43,6 +44,7 @@ export function AccountPage() {
   const user = identity.user;
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const config = useQuery({ queryKey: ["config"], queryFn: team.configuration });
   const moduleSettings = getProfileSettings();
   const titles: Record<string, string> = { ...coreTitles };
   for (const setting of moduleSettings) titles[setting.view] = setting.title;
@@ -61,6 +63,10 @@ export function AccountPage() {
   const [error, setError] = useState("");
   if (!user || identity.dialog) return null;
   const local = identity.vault?.pubkey === user.id;
+  const passwordless = local && !!identity.vault?.secret;
+  const legacyEncrypted = local && !!identity.vault?.encrypted && !identity.vault?.secret;
+  const isOwner = !!config.data?.ownerPubkey && config.data.ownerPubkey === user.id;
+
   const clearDirty = () =>
     document
       .querySelectorAll('.profile-panel form[data-dirty="true"]')
@@ -108,11 +114,13 @@ export function AccountPage() {
               <div>
                 <h3>{user.name || "Your profile"}</h3>
                 <span className="profile-role">
-                  {user.role === "admin"
-                    ? "Administrator"
-                    : user.role === "member"
-                      ? "Member"
-                      : "Access pending"}
+                  {isOwner
+                    ? "Team Owner"
+                    : user.role === "admin"
+                      ? "Administrator"
+                      : user.role === "member"
+                        ? "Member"
+                        : "Access pending"}
                 </span>
               </div>
               <span className="connected-badge">Identity linked</span>
@@ -137,11 +145,13 @@ export function AccountPage() {
                 icon={<KeyRound size={20} />}
                 label="Identity & recovery"
                 detail={
-                  local
-                    ? identity.unlocked
-                      ? "Keys unlocked · backup available"
-                      : "Keys locked · backup available"
-                    : "Connected through your signer"
+                  passwordless
+                    ? "Saved on this device · backup available"
+                    : legacyEncrypted
+                      ? identity.unlocked
+                        ? "Keys unlocked · backup available"
+                        : "Keys locked · backup available"
+                      : "Connected through your signer"
                 }
                 onClick={() => changeView("identity")}
               />
@@ -254,25 +264,68 @@ export function AccountPage() {
         ) : (
           <div className="recovery-content">
             <Notice tone="info">
-              Your encrypted backup restores your Nostr identity. On a new phone, an administrator
-              must approve team access again. Private history is not included.
+              Your Nostr key restores your identity on another device. On a new phone, an
+              administrator must approve team access again. Private history is not included.
             </Notice>
             <div className="identity-status">
               <LockKeyhole size={20} />
               <span>
-                {local ? (identity.unlocked ? "Unlocked" : "Keys locked") : "External identity"}
+                {passwordless
+                  ? "Saved on this device"
+                  : legacyEncrypted
+                    ? identity.unlocked
+                      ? "Unlocked"
+                      : "Keys locked"
+                    : "External signer"}
               </span>
             </div>
             <p className="small muted">
-              Your app stays connected when your keys lock. Private keys stay on your device or in
-              your signer.
+              Private keys stay on this device or in your Nostr signer and are never sent to a
+              server.
             </p>
-            {local ? (
+            {passwordless ? (
               <>
                 <Button
                   onClick={() =>
                     void run(async () => {
-                      await downloadText(identity.vault!.encrypted, backupName(user.id));
+                      if (
+                        !(await confirm({
+                          title: "Copy your private key?",
+                          description:
+                            "Anyone with your nsec key can act as you. Paste it only in a trusted password manager or Nostr signer.",
+                          action: "Copy nsec",
+                        }))
+                      )
+                        return;
+                      const nsec = await vaultCall<string>("exportSecret");
+                      await navigator.clipboard.writeText(nsec);
+                      toast("Private key copied. Keep it safe.");
+                    })
+                  }
+                >
+                  <Copy size={18} />
+                  Copy private key (nsec)
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    void run(async () => {
+                      const nsec = await vaultCall<string>("exportSecret");
+                      await downloadText(nsec, `bitpolito-key-${user.id.slice(0, 8)}.nsec.txt`);
+                      toast("Key backup saved.");
+                    })
+                  }
+                >
+                  <Download size={18} />
+                  Download key backup
+                </Button>
+              </>
+            ) : legacyEncrypted ? (
+              <>
+                <Button
+                  onClick={() =>
+                    void run(async () => {
+                      await downloadText(identity.vault!.encrypted!, backupName(user.id));
                       toast("Encrypted backup downloaded.");
                     })
                   }
@@ -312,7 +365,7 @@ export function AccountPage() {
               </p>
             )}
             <details className="public-identity">
-              <summary>Public identity</summary>
+              <summary>Public identity (npub)</summary>
               <code className="key-display">{npubEncode(user.id)}</code>
               <Button
                 variant="ghost"
@@ -335,7 +388,7 @@ export function AccountPage() {
                     !(await confirm({
                       title: "Connect another identity?",
                       description:
-                        "Your current session will be signed out. Keep your recovery backup before switching.",
+                        "Your current session will be signed out. Keep a backup of your key before switching.",
                       action: "Switch identity",
                     }))
                   )
@@ -356,7 +409,7 @@ export function AccountPage() {
                       !(await confirm({
                         title: "Remove keys from this device?",
                         description:
-                          "You’ll need the encrypted backup and its password to return. Your membership and shared content remain.",
+                          "You’ll need your saved key backup to return. Your membership and shared content remain.",
                         action: "Remove saved keys",
                         danger: true,
                       }))

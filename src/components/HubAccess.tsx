@@ -17,18 +17,22 @@ const statusNotice: Partial<Record<ApplicationStatus, string>> = {
 };
 
 export function HubAccess({ invite }: { invite: string }) {
-  const identity = useIdentity(),
-    confirm = useConfirm();
-  const [error, setError] = useState(""),
-    [token, setToken] = useState(invite),
-    [busy, setBusy] = useState(false),
-    [editingInvite, setEditingInvite] = useState(false);
+  const identity = useIdentity();
+  const confirm = useConfirm();
+  const [error, setError] = useState("");
+  const [token, setToken] = useState(invite);
+  const [busy, setBusy] = useState(false);
+  const [editingInvite, setEditingInvite] = useState(false);
   useEffect(() => {
     if (invite) {
       setToken(invite);
       setEditingInvite(false);
     }
   }, [invite]);
+  const config = useQuery({
+    queryKey: ["config"],
+    queryFn: team.configuration,
+  });
   const status = useQuery({
     queryKey: keys.joinStatus,
     queryFn: team.joinStatus,
@@ -37,6 +41,13 @@ export function HubAccess({ invite }: { invite: string }) {
   });
   const waiting = status.data?.status === "pending" && !editingInvite;
   const user = identity.user;
+
+  const ownerPubkey = config.data?.ownerPubkey || null;
+  const adminPubkeys = config.data?.adminPubkeys || [];
+  const hasConfiguredAuthority = !!ownerPubkey || adminPubkeys.length > 0;
+  const isOwner = !!user && !!ownerPubkey && user.id === ownerPubkey;
+  const canBootstrap =
+    !!user && (!hasConfiguredAuthority || isOwner || adminPubkeys.includes(user.id));
 
   async function requestAccess(form: FormData) {
     const value = inviteToken(String(form.get("invite")));
@@ -161,14 +172,21 @@ export function HubAccess({ invite }: { invite: string }) {
               Sign out
             </Button>
           </div>
-          {!waiting && !status.isPending && (
-            <details className="bootstrap-help">
-              <summary>Setting up a new team?</summary>
+          {!waiting && !status.isPending && canBootstrap && (
+            <details className="bootstrap-help" open={isOwner}>
+              <summary>
+                {isOwner ? "Initialize the official BitPolito team" : "Setting up a new team?"}
+              </summary>
               <p className="small muted">
-                This creates a separate encrypted team. To join an existing team, use its invitation
-                instead.
+                {isOwner
+                  ? "Signed in as the configured team owner. Create the official encrypted team and invite your administrators."
+                  : "This creates a separate encrypted team. To join an existing team, use its invitation instead."}
               </p>
-              <Button variant="secondary" busy={busy} onClick={() => void createTeam()}>
+              <Button
+                variant={isOwner ? "primary" : "secondary"}
+                busy={busy}
+                onClick={() => void createTeam()}
+              >
                 Create a new team
               </Button>
             </details>

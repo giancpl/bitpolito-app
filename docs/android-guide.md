@@ -164,3 +164,20 @@ verification used this method against port 3480 and restored both healthy relays
 
 This check does not replace the physical Android pilot or test a phone whose
 network is completely disconnected.
+
+## Download-only ARM64 test build
+
+The repository README links to `downloads/bitpolito-team-arm64-v8a.apk`, with a
+SHA-256 file and source/build metadata beside it. It uses the external relays
+and the same local debug signing identity as the universal team APK. It is a
+test build, not a release. Build it with:
+
+```bash
+BITPOLITO_ANDROID_ABI=arm64-v8a npm run android:build -- team
+```
+
+The optional ABI filter leaves default universal/sandbox builds unchanged.
+Keep signing keys out of Git; only the public certificate digest belongs in
+build metadata. New local-key onboarding is passwordless and backups contain
+an unencrypted nsec; see the current README before following historical
+NIP-49 onboarding verification notes.

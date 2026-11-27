@@ -54,6 +54,11 @@ class HubRuntime private constructor(private val context: Context) {
         get() = store.get("hub.relays.${account ?: "new"}")?.let { arrayStrings(JSONArray(it)) }
             ?: if (BuildConfig.SANDBOX) listOf("ws://127.0.0.1:3480", "ws://127.0.0.1:3481")
             else listOf("wss://relay.eu.whitenoise.chat", "wss://relay.us.whitenoise.chat")
+    private val ownerPubkey: String? = NpubCodec.decodePubkey(BuildConfig.OWNER_NPUB)
+    private val configuredAdmins: Set<String> = buildSet {
+        ownerPubkey?.let { add(it) }
+        addAll(NpubCodec.parseList(BuildConfig.ADMIN_NPUBS))
+    }
 
     /** Registers a pending signer request and asks the unlocked WebView identity to answer it. */
     private fun requestCrypto(action: String, params: JSONObject): Pair<String, CompletableFuture<String>> {
@@ -443,7 +448,7 @@ class HubRuntime private constructor(private val context: Context) {
         // Connection status must remain readable while an interactive signer/network call is pending.
         if(action=="status")return JSONObject().put("state",if(lastError!=null)"reconnecting" else if(syncing)"syncing" else "connected").put("error",lastError?:JSONObject.NULL).put("activity",phase)
         return gate.withLock { when(action){
-            "configuration"->JSONObject().put("transport","marmot").put("sandbox",BuildConfig.SANDBOX).put("relays",JSONArray(relays)).put("signerRelays",JSONArray(listOf("wss://nrs.primal.net"))).put("timezone","Europe/Rome").put("pushPublicKey",JSONObject.NULL)
+            "configuration"->JSONObject().put("transport","marmot").put("sandbox",BuildConfig.SANDBOX).put("relays",JSONArray(relays)).put("signerRelays",JSONArray(listOf("wss://nrs.primal.net"))).put("timezone","Europe/Rome").put("pushPublicKey",JSONObject.NULL).put("ownerPubkey",ownerPubkey?:JSONObject.NULL).put("adminPubkeys",JSONArray(configuredAdmins.toList()))
             "status"->JSONObject().put("state",if(lastError!=null)"reconnecting" else if(syncing)"syncing" else "connected").put("error",lastError?:JSONObject.NULL)
             "alertSettings"->{store.put("hub.vibration",input.optBoolean("vibration").toString());JSONObject().put("ok",true)}
             "me"->{if(account==null||signedOut)JSONObject().put("user",JSONObject.NULL)else{
@@ -451,7 +456,7 @@ class HubRuntime private constructor(private val context: Context) {
                 val user=if(team==null)fallback else try{val p=load();p.users().let{list->(0 until list.length()).map{list.getJSONObject(it)}.find{it.getString("id")==activeAccount()}}}catch(e:Exception){lastError=errorMessage(e);if((e is MarmotKitException.GroupRemoved||e is MarmotKitException.UnknownGroup||e.message?.contains("Member access required")==true)){store.put("hub.team.${activeAccount()}",null);team=null;projection=null};fallback}
                 JSONObject().put("user",user?:JSONObject.NULL)
             }}
-            "createTeam"->{check(team==null){"This device already belongs to a team"};val created=kit().createGroup(activeAccount(),"BitPolito",emptyList(),"bitpolito.hub.v1");team=requireNotNull(created.groupIdHex){"No relay accepted the new team"};store.put("hub.team.${activeAccount()}",team);projection=null;publish("profile",JSONObject().put("name",identityName).put("about",""));startSync();JSONObject().put("ok",true)}
+            "createTeam"->{check(team==null){"This device already belongs to a team"};if(configuredAdmins.isNotEmpty())check(activeAccount() in configuredAdmins){"Only the configured BitPolito owner or administrator can create the official team"};val created=kit().createGroup(activeAccount(),"BitPolito",emptyList(),"bitpolito.hub.v1");team=requireNotNull(created.groupIdHex){"No relay accepted the new team"};store.put("hub.team.${activeAccount()}",team);projection=null;publish("profile",JSONObject().put("name",identityName).put("about",""));startSync();JSONObject().put("ok",true)}
             "profile"->{identityName=input.getString("name").trim().take(60);require(identityName.isNotEmpty()){ "Enter your name" };store.put("hub.name.${activeAccount()}",identityName);if(team!=null)publish("profile",JSONObject().put("name",identityName).put("about",input.optString("about").take(500)));JSONObject().put("ok",true)}
             "deviceReadiness"->{activeAccount();check(team==null){"This phone already belongs to a team"};val routes=arrayStrings(decodeInvite(input.getString("token")).getJSONArray("relays"));JSONObject().put("otherInstallations",otherPhonePackages(routes).map{it.keyPackageId}.distinct().size)}
             "preparePhone"->{
@@ -535,7 +540,7 @@ class HubRuntime private constructor(private val context: Context) {
                             kit().removeMembers(activeAccount(),team!!,listOf(who))
                             error("More than one phone is still advertised. Ask the member to sign out on the previous phone and prepare this phone again before retrying approval.")
                         }
-                        if(request.optBoolean("restoreAdmin")&&kit().groupRoster(activeAccount(),team!!).members.none{key(it.memberIdHex)==who&&it.isAdmin})kit().promoteAdmin(activeAccount(),team!!,who)
+                        if((request.optBoolean("restoreAdmin")||who in configuredAdmins)&&kit().groupRoster(activeAccount(),team!!).members.none{key(it.memberIdHex)==who&&it.isAdmin})kit().promoteAdmin(activeAccount(),team!!,who)
                         invite.put("usedAt",now()).put("usedApplication",request.getString("id"));saveRecords("invites",invitations)
                         val snapshotProfiles = p.profiles().toMutableMap()
                         val applicantName = request.optString("name").trim().take(60)
@@ -553,7 +558,7 @@ class HubRuntime private constructor(private val context: Context) {
                 }
                 JSONObject().put("ok",true)
             }
-            "setRole"->{val p=load();check(p.members[activeAccount()]==true){"Administrator access required"};val id=input.getString("id");val role=input.getString("role");if(role=="follower"&&!p.members.containsKey(id))return@withLock JSONObject().put("ok",true);check(p.members.containsKey(id)){"Member not found"};if((role=="admin"&&p.members[id]==true)||(role=="member"&&p.members[id]==false))return@withLock JSONObject().put("ok",true);check(!(p.members[id]==true&&role!="admin"&&p.members.values.count{it}==1)){"The last administrator cannot be removed"};when(role){"admin"->kit().promoteAdmin(activeAccount(),team!!,id);"member"->if(id==activeAccount())kit().selfDemoteAdmin(activeAccount(),team!!)else kit().demoteAdmin(activeAccount(),team!!,id);"follower"->if(id==activeAccount())kit().leaveGroup(activeAccount(),team!!)else kit().removeMembers(activeAccount(),team!!,listOf(id));else->error("Unknown role")};JSONObject().put("ok",true)}
+            "setRole"->{val p=load();check(p.members[activeAccount()]==true){"Administrator access required"};val id=input.getString("id");val role=input.getString("role");if(ownerPubkey!=null&&id==ownerPubkey&&role!="admin")error("The team owner cannot be demoted or removed");if(role=="follower"&&!p.members.containsKey(id))return@withLock JSONObject().put("ok",true);check(p.members.containsKey(id)){"Member not found"};if((role=="admin"&&p.members[id]==true)||(role=="member"&&p.members[id]==false))return@withLock JSONObject().put("ok",true);check(!(p.members[id]==true&&role!="admin"&&p.members.values.count{it}==1)){"The last administrator cannot be removed"};when(role){"admin"->kit().promoteAdmin(activeAccount(),team!!,id);"member"->if(id==activeAccount())kit().selfDemoteAdmin(activeAccount(),team!!)else kit().demoteAdmin(activeAccount(),team!!,id);"follower"->if(id==activeAccount())kit().leaveGroup(activeAccount(),team!!)else kit().removeMembers(activeAccount(),team!!,listOf(id));else->error("Unknown role")};JSONObject().put("ok",true)}
             "logout"->{
                 phase="signing out"
                 stopSync();HubOfficeService.stop(context)
