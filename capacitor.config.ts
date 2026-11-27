@@ -1,8 +1,15 @@
-import type { CapacitorConfig } from '@capacitor/cli';
+import type { CapacitorConfig } from "@capacitor/cli";
 const config: CapacitorConfig = {
-  appId: 'it.bitpolito.hub', appName: 'BitPolito', webDir: 'dist/client',
-  loggingBehavior: 'none',
-  server: {androidScheme:'https'},
-  android: {allowMixedContent:false},
+  appId: "it.bitpolito.hub",
+  appName: "BitPolito",
+  webDir: "dist/client",
+  loggingBehavior: "none",
+  server: { androidScheme: "https" },
+  android: { allowMixedContent: false },
+  plugins: {
+    SystemBars: {
+      style: "LIGHT",
+    },
+  },
 };
 export default config;

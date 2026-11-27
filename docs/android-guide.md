@@ -6,6 +6,23 @@ Node 22.12+, Linux build tools and USB debugging or an Android emulator.
 `npm run android:setup` installs an isolated JDK 21 and Android SDK 36 under
 `.android-local`; it does not replace system Java. Android 8/API 26 is the minimum.
 
+## Release builds
+
+Debug APKs are for pilots. For a signed release, provide a keystore through
+environment variables (or Gradle properties of the same name) and a version:
+
+```bash
+export BITPOLITO_KEYSTORE=/secure/path/bitpolito.jks
+export BITPOLITO_KEYSTORE_PASSWORD=… BITPOLITO_KEY_ALIAS=… BITPOLITO_KEY_PASSWORD=…
+npm run build
+npx cap sync android
+(cd android && ./gradlew :app:assembleTeamRelease -PversionCode=2 -PversionName=1.1)
+```
+
+The release signing config applies only when all four variables are set. Never
+commit the keystore. Code shrinking stays off because MarmotKit's JNA/uniffi
+bindings rely on reflection.
+
 ```bash
 npm ci
 npm run android:setup
@@ -83,9 +100,7 @@ npm run test:android:hub
 This opt-in test connects only disposable fixture identities on the installed
 sandbox. It refuses a non-fixture signed-in identity, uses the real Android
 bridge and two loopback relays, and never replaces an existing identity vault.
-It exercises encrypted approval and the office workflow. Do not run the old
-HTTP/Firebase smoke scripts against this APK: they describe the archived server
-installation.
+It exercises encrypted approval and the office workflow.
 
 ## Physical Android pilot
 
@@ -149,3 +164,20 @@ verification used this method against port 3480 and restored both healthy relays
 
 This check does not replace the physical Android pilot or test a phone whose
 network is completely disconnected.
+
+## Download-only ARM64 test build
+
+The repository README links to `downloads/bitpolito-team-arm64-v8a.apk`, with a
+SHA-256 file and source/build metadata beside it. It uses the external relays
+and the same local debug signing identity as the universal team APK. It is a
+test build, not a release. Build it with:
+
+```bash
+BITPOLITO_ANDROID_ABI=arm64-v8a npm run android:build -- team
+```
+
+The optional ABI filter leaves default universal/sandbox builds unchanged.
+Keep signing keys out of Git; only the public certificate digest belongs in
+build metadata. New local-key onboarding is passwordless and backups contain
+an unencrypted nsec; see the current README before following historical
+NIP-49 onboarding verification notes.

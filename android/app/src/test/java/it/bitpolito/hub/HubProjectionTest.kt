@@ -65,4 +65,20 @@ class HubProjectionTest {
         assertEquals(Instant.parse("2026-03-29T22:00:00Z").epochSecond,HubProjection.midnight(Instant.parse("2026-03-29T00:00:00Z").epochSecond))
         assertEquals(Instant.parse("2026-10-25T23:00:00Z").epochSecond,HubProjection.midnight(Instant.parse("2026-10-25T00:00:00Z").epochSecond))
     }
+    @Test fun profileAnnouncementCarriesMemberNameIntoNewEpoch() {
+        val p = projection()
+        p.ingest(op("profile", "adm-bob", 1, bob, JSONObject().put("name", "Bob").put("about", "")), bob, false)
+        val announcement = p.profileAnnouncement(bob)
+        assertNotNull(announcement)
+        assertEquals("Bob", announcement!!.getJSONObject("data").getString("name"))
+
+        val q = projection()
+        q.ingest(announcement.toString(), bob, false)
+        val bobUser = (0 until q.users().length()).map { q.users().getJSONObject(it) }.first { it.getString("id") == bob }
+        assertEquals("Bob", bobUser.getString("name"))
+
+        q.ingest(op("profile", "edit-bob", 2, bob, JSONObject().put("name", "Robert").put("about", "")), bob, false)
+        val updatedUser = (0 until q.users().length()).map { q.users().getJSONObject(it) }.first { it.getString("id") == bob }
+        assertEquals("Robert", updatedUser.getString("name"))
+    }
 }

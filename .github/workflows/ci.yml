@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+      - name: Guard the team bundle against simulator code
+        run: |
+          if grep -rl "Browser simulator\|Disposable preview" dist/client; then
+            echo "Simulator code leaked into the production bundle" >&2
+            exit 1
+          fi
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7
+
+  android:
+    name: Android (sandbox)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - name: Install the checksum-pinned MarmotKit
+        run: python3 scripts/marmot-setup.py
+      - name: Create a throwaway debug keystore
+        run: >
+          keytool -genkeypair -keystore .android-local/debug.keystore -storepass android
+          -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 1
+          -dname 'CN=BitPolito CI,O=BitPolito,C=IT'
+      - name: Build the sandbox web bundle
+        run: npm run build
+        env:
+          VITE_ANDROID_SANDBOX: "true"
+      - run: npx cap sync android
+      - name: Unit tests and sandbox APK
+        working-directory: android
+        run: ./gradlew :app:testSandboxDebugUnitTest :app:assembleSandboxDebug --console=plain

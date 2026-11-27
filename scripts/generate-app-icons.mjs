@@ -1,5 +1,5 @@
 // Rasterize the existing vector brand asset; no generated or replacement logo.
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 const source = await readFile(
   new URL("../public/brand/cow-icon-white.svg", import.meta.url),
@@ -30,13 +30,7 @@ try {
         // Keep the cow inside the central maskable safe zone on every icon.
         const width = size * 0.6,
           height = width * (1260 / 1540);
-        context.drawImage(
-          img,
-          (size - width) / 2,
-          (size - height) / 2,
-          width,
-          height,
-        );
+        context.drawImage(img, (size - width) / 2, (size - height) / 2, width, height);
         return canvas.toDataURL("image/png").split(",")[1];
       },
       { source, size },

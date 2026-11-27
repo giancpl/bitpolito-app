@@ -52,16 +52,22 @@ export function useGuidance(member = "") {
   let legacyAlerts = false;
   try {
     legacyAlerts = !!localStorage.getItem(`bitpolito.office.alerts-setup-v2.${member}`);
-  } catch { /* Optional local preference. */ }
+  } catch {
+    /* Optional local preference. */
+  }
   return {
     dismissed: (guide: Guide) =>
       progress.dismissed.includes(guide) || (guide === "alerts" && legacyAlerts),
     completed: (action: GuideAction) => progress.completed.includes(action),
-    dismiss: (guide: Guide) => write(member, (p) => ({
-      ...p, dismissed: [...new Set([...p.dismissed, guide])],
-    })),
-    complete: (action: GuideAction) => write(member, (p) => ({
-      ...p, completed: [...new Set([...p.completed, action])],
-    })),
+    dismiss: (guide: Guide) =>
+      write(member, (p) => ({
+        ...p,
+        dismissed: [...new Set([...p.dismissed, guide])],
+      })),
+    complete: (action: GuideAction) =>
+      write(member, (p) => ({
+        ...p,
+        completed: [...new Set([...p.completed, action])],
+      })),
   };
 }

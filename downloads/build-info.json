@@ -1,0 +1,24 @@
+{
+  "sourceCommit": "7eb528f89d9050016479b04113dc21953461aeea",
+  "sourceBranch": "improve/distributed-cleanup",
+  "builtAt": "2026-11-27T13:52:57.227243+00:00",
+  "command": "BITPOLITO_ANDROID_ABI=arm64-v8a npm run android:build -- team",
+  "applicationId": "it.bitpolito.hub",
+  "buildType": "teamDebug",
+  "abi": "arm64-v8a",
+  "minSdk": 26,
+  "targetSdk": 36,
+  "bytes": 65873939,
+  "sha256": "54dda8782cd147e7f870c8cb0cc9b2b4c73e6cdaa5655f7a4a7f5a8a6ab62fc2",
+  "signingCertificateSha256": "6d7f861bf68549f825916b185457e33c10700cfebde934eee7662f2e2fb3cc77",
+  "marmotVersion": "0.19.0",
+  "verification": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "formatCheck": "passed",
+    "typescriptTests": 20,
+    "browserTests": 8,
+    "nativeJvmTests": 19
+  },
+  "physicalBackgroundPilot": "pending"
+}

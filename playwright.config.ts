@@ -1,37 +1,21 @@
-import { defineConfig, devices } from "@playwright/test";
-const apiPort=Number(process.env.TEST_API_PORT||3001),webPort=Number(process.env.TEST_WEB_PORT||5173);
-const webOrigin=`http://127.0.0.1:${webPort}`,apiOrigin=`http://127.0.0.1:${apiPort}`;
+import { defineConfig } from "@playwright/test";
+
+// End-to-end UX checks against the browser simulator. No application server is involved.
 export default defineConfig({
-  outputDir: "test-results/browser",
-  testDir: "./tests/browser",
-  timeout: 90000,
-  fullyParallel: false,
+  testDir: "./tests/hub",
+  outputDir: "test-results/hub",
   workers: 1,
-  expect: { timeout: 15000 },
+  timeout: 90000,
+  expect: { timeout: 20000 },
   use: {
-    baseURL: webOrigin,
-    actionTimeout: 15000,
+    baseURL: "http://127.0.0.1:5190",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
-    { name: "mobile", use: { ...devices["Pixel 7"] } },
-  ],
-  webServer: [
-    {
-      command: "tsx tests/e2e-server.ts",
-      env: {TEST_APP_PORT:String(apiPort),TEST_APP_ORIGIN:webOrigin},
-      url: `${apiOrigin}/api/health`,
-      reuseExistingServer: false,
-      timeout: 30000,
-    },
-    {
-      command: `vite --host 127.0.0.1 --port ${webPort} --strictPort`,
-      env: {BITPOLITO_API_PROXY:apiOrigin,VITE_HUB_PREVIEW:"false"},
-      url: webOrigin,
-      reuseExistingServer: false,
-      timeout: 30000,
-    },
-  ],
+  webServer: {
+    command: "VITE_HUB_PREVIEW=true vite --host 127.0.0.1 --port 5190 --strictPort",
+    url: "http://127.0.0.1:5190",
+    reuseExistingServer: false,
+    timeout: 60000,
+  },
 });

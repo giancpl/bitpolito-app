@@ -19,15 +19,11 @@ public class SecureStoreInstrumentedTest {
       try{store.get("instrumented-vault");fail("Tampered encrypted state must be rejected");}catch(javax.crypto.AEADBadTagException expected){}
     } finally {store.put("instrumented-vault",null);}
   }
-  @Test public void staleRequestCannotClearANewerSession() throws Exception {
-    SecureStore store=new SecureStore(InstrumentationRegistry.getInstrumentation().getTargetContext());
-    String previous=store.get("session");
-    try{store.put("session","old-test-token");store.put("session","new-test-token");assertFalse(store.clearSessionIf("old-test-token"));assertEquals("new-test-token",store.get("session"));assertTrue(store.clearSessionIf("new-test-token"));assertNull(store.get("session"));}
-    finally{store.put("session",previous);}
-  }
-  @Test public void notificationChannelUsesLocalCowWithoutAlarmPrivileges(){
+  @Test public void doorbellChannelUsesLocalCowWithoutAlarmPrivileges() throws Exception {
     Context c=InstrumentationRegistry.getInstrumentation().getTargetContext();Alerts.channels(c);
-    android.app.NotificationChannel channel=c.getSystemService(android.app.NotificationManager.class).getNotificationChannel(Alerts.CHANNEL);
-    assertEquals("Office doorbell",channel.getName());assertNotNull(channel.getSound());assertTrue(channel.shouldVibrate());assertEquals(android.media.AudioAttributes.USAGE_NOTIFICATION_EVENT,channel.getAudioAttributes().getUsage());
+    android.app.NotificationManager nm=c.getSystemService(android.app.NotificationManager.class);
+    assertNull("The retired doorbell channel must be removed",nm.getNotificationChannel("office-doorbell-v1"));
+    android.app.NotificationChannel channel=nm.getNotificationChannel(Alerts.configuredChannel(c));
+    assertEquals("Office doorbell",channel.getName());assertNotNull(channel.getSound());assertEquals("true".equals(new SecureStore(c).get("hub.vibration")),channel.shouldVibrate());assertEquals(android.media.AudioAttributes.USAGE_NOTIFICATION_EVENT,channel.getAudioAttributes().getUsage());
   }
 }

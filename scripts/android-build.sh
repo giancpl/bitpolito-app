@@ -2,6 +2,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 flavor="${1:-sandbox}"
+abi="${BITPOLITO_ANDROID_ABI:-}"
+gradle_args=()
+artifact_name="bitpolito-$flavor"
+if [[ -n "$abi" ]]; then
+  case "$abi" in arm64-v8a|armeabi-v7a|x86|x86_64) ;; *) echo 'Unsupported BITPOLITO_ANDROID_ABI'; exit 1;; esac
+  gradle_args+=("-PandroidAbi=$abi")
+  artifact_name="$artifact_name-$abi"
+fi
 if [[ "$flavor" != sandbox && "$flavor" != team ]]; then echo 'Use sandbox or team'; exit 1; fi
 python3 scripts/marmot-setup.py
 export VITE_HUB_PREVIEW=false
@@ -14,8 +22,8 @@ if [[ ! -f "$PWD/.android-local/debug.keystore" ]]; then
 fi
 npm run build
 npx cap sync android
-(cd android && ./gradlew ":app:$task" :app:testSandboxDebugUnitTest --no-daemon --console=plain)
+(cd android && ./gradlew ":app:$task" :app:testSandboxDebugUnitTest "${gradle_args[@]}" --no-daemon --console=plain)
 mkdir -p artifacts
-cp "android/app/build/outputs/apk/$flavor/debug/app-$flavor-debug.apk" "artifacts/bitpolito-$flavor.apk"
-(cd artifacts && sha256sum "bitpolito-$flavor.apk" > "bitpolito-$flavor.apk.sha256")
-printf 'APK: artifacts/bitpolito-%s.apk\n' "$flavor"
+cp "android/app/build/outputs/apk/$flavor/debug/app-$flavor-debug.apk" "artifacts/$artifact_name.apk"
+(cd artifacts && sha256sum "$artifact_name.apk" > "$artifact_name.apk.sha256")
+printf 'APK: artifacts/%s.apk\n' "$artifact_name"

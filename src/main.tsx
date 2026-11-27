@@ -6,7 +6,6 @@ import { MotionConfig } from "motion/react";
 import { FeedbackProvider } from "./components/Feedback";
 import { IdentityProvider } from "./lib/identity";
 import "./style.css";
-import "./lib/webapp";
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 10000 } },
 });

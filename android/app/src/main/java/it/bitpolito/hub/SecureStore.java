@@ -34,5 +34,4 @@ final class SecureStore {
     prefs.edit().putString(name,Base64.encodeToString(ByteBuffer.allocate(4+iv.length+data.length).putInt(iv.length).put(iv).put(data).array(),Base64.NO_WRAP)).commit();
   }
   }
-  boolean clearSessionIf(String expected) throws Exception { synchronized(SecureStore.class){if(expected!=null&&expected.equals(get("session"))){put("session",null);return true;}return false;} }
 }

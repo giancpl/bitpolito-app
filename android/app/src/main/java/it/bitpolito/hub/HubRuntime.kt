@@ -12,60 +12,179 @@ import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
+import kotlinx.coroutines.future.await
 
-/** Process-wide owner of MLS/SQLCipher. No HTTP sessions or application server. */
+/**
+ * Process-wide owner of MLS/SQLCipher. No HTTP sessions or application server.
+ *
+ * Threading: all engine work runs on [scope] (Dispatchers.IO) and is serialized by [gate].
+ * Fields that are also touched from the UI thread or read outside [gate] are `@Volatile`.
+ */
 class HubRuntime private constructor(private val context: Context) {
-    val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
-    private val gate=Mutex()
-    private val store=SecureStore(context)
-    private var engine:Marmot?=null
-    private var projection:HubProjection?=null
-    private var syncJob:Job?=null
-    private var sequence=0L
-    @Volatile private var syncing=false
-    @Volatile private var phase="idle"
-    private var lastInboxSummary=""
-    private var lastError:String?=null
-    var emit:((String,JSONObject)->Unit)?=null
-    var visible=false
-    private val cryptoCalls=ConcurrentHashMap<String,CompletableFuture<String>>()
-    private val device=store.get("hub.device")?:UUID.randomUUID().toString().also{store.put("hub.device",it)}
-    private var account=store.get("hub.account")
-    private var team=account?.let{store.get("hub.team.$it")}
-    private var signedOut=store.get("hub.signedOut")=="true"
-    private var identityName=account?.let{store.get("hub.name.$it")}?:""
-    private val relays:List<String> get()=(store.get("hub.relays.${account?:"new"}")?.let{arrayStrings(JSONArray(it))}?:if(BuildConfig.SANDBOX)listOf("ws://127.0.0.1:3480","ws://127.0.0.1:3481")else listOf("wss://relay.eu.whitenoise.chat","wss://relay.us.whitenoise.chat"))
-    private fun crypto(action:String,params:JSONObject):String {
-        check(visible&&emit!=null){"Unlock your identity in the app to continue"}
-        val id=UUID.randomUUID().toString();val result=CompletableFuture<String>();cryptoCalls[id]=result
-        try { emit?.invoke("bitpolito:crypto",params.put("id",id).put("action",action));return result.get(90,TimeUnit.SECONDS) }
-        finally {cryptoCalls.remove(id)}
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val gate = Mutex()
+    private val main = Handler(Looper.getMainLooper())
+    private val store = SecureStore(context)
+    private var engine: Marmot? = null
+    private var projection: HubProjection? = null
+    @Volatile private var syncJob: Job? = null
+    private var sequence = 0L
+    @Volatile private var syncing = false
+    @Volatile private var phase = "idle"
+    private var lastInboxSummary = ""
+    @Volatile private var lastError: String? = null
+
+    /** Set by the WebView plugin; invoked from IO/FFI threads. */
+    @Volatile var emit: ((String, JSONObject) -> Unit)? = null
+
+    /** Written by the activity lifecycle (UI thread), read by sync and signer threads. */
+    @Volatile var visible = false
+
+    private val cryptoCalls = ConcurrentHashMap<String, CompletableFuture<String>>()
+    private val device = store.get("hub.device") ?: UUID.randomUUID().toString().also { store.put("hub.device", it) }
+    @Volatile private var account = store.get("hub.account")
+    @Volatile private var team = account?.let { store.get("hub.team.$it") }
+    @Volatile private var signedOut = store.get("hub.signedOut") == "true"
+    private var identityName = account?.let { store.get("hub.name.$it") } ?: ""
+    private val relays: List<String>
+        get() = store.get("hub.relays.${account ?: "new"}")?.let { arrayStrings(JSONArray(it)) }
+            ?: if (BuildConfig.SANDBOX) listOf("ws://127.0.0.1:3480", "ws://127.0.0.1:3481")
+            else listOf("wss://relay.eu.whitenoise.chat", "wss://relay.us.whitenoise.chat")
+    private val ownerPubkey: String? = NpubCodec.decodePubkey(BuildConfig.OWNER_NPUB)
+    private val configuredAdmins: Set<String> = buildSet {
+        ownerPubkey?.let { add(it) }
+        addAll(NpubCodec.parseList(BuildConfig.ADMIN_NPUBS))
     }
-    fun reply(id:String,value:String?,error:String?){cryptoCalls[id]?.let{if(error!=null)it.completeExceptionally(IllegalStateException(error))else it.complete(value?:"")}}
-    fun detach(){visible=false;cryptoCalls.values.forEach{it.completeExceptionally(IllegalStateException("Identity operation interrupted"))};emit=null}
-    @Synchronized fun pauseWhenHidden(){
-        if(visible||HubOfficeService.running)return
-        syncJob?.cancel();syncJob=null
-        scope.launch{gate.withLock{
-            if(!visible&&!HubOfficeService.running){
-                val previous=engine;engine=null
-                try{previous?.shutdownAndClose()}catch(_:Exception){lastError="The relay connection paused. Reopen the app to reconnect."}
-            }
-        }}
-    }
-    private fun signer(key:String)=object:ExternalAccountSignerFfi {
-        override fun publicKey()=key
-        override fun signEvent(unsignedEventJson:String):String {
-            val event=JSONObject(unsignedEventJson)
-            check(event.getInt("kind") !in listOf(0,3)){"Public profiles and contacts are disabled in BitPolito"}
-            return crypto("sign",JSONObject().put("owner",key).put("event",event))
+
+    /** Registers a pending signer request and asks the unlocked WebView identity to answer it. */
+    private fun requestCrypto(action: String, params: JSONObject): Pair<String, CompletableFuture<String>> {
+        // Capture once: detach() may clear emit concurrently, and a request that is never
+        // delivered would otherwise wait for the full timeout.
+        val sink = emit
+        check(visible && sink != null) { "Unlock your identity in the app to continue" }
+        val id = UUID.randomUUID().toString()
+        val result = CompletableFuture<String>()
+        cryptoCalls[id] = result
+        try {
+            sink.invoke("bitpolito:crypto", params.put("id", id).put("action", action))
+        } catch (e: Exception) {
+            cryptoCalls.remove(id)
+            throw e
         }
-        override fun nip04Encrypt(publicKey:String,content:String):String=throw IllegalStateException("Legacy encryption is not supported")
-        override fun nip04Decrypt(publicKey:String,encryptedContent:String):String=throw IllegalStateException("Legacy encryption is not supported")
-        override fun nip44Encrypt(publicKey:String,content:String)=crypto("encrypt",JSONObject().put("owner",key).put("pubkey",publicKey).put("content",content))
-        override fun nip44Decrypt(publicKey:String,payload:String)=crypto("decrypt",JSONObject().put("owner",key).put("pubkey",publicKey).put("content",payload))
+        return id to result
     }
+
+    /**
+     * Blocking variant for MarmotKit's [ExternalAccountSignerFfi] callbacks. uniffi callback
+     * interfaces are synchronous (Rust waits on the calling thread for the return value), so
+     * this cannot suspend. It runs on a Rust/JNA worker or IO thread; it must never run on the
+     * main thread, because the WebView answer is delivered through the main looper.
+     */
+    private fun crypto(action: String, params: JSONObject): String {
+        check(Looper.myLooper() != Looper.getMainLooper()) { "Identity operations cannot run on the main thread" }
+        val (id, result) = requestCrypto(action, params)
+        try {
+            return result.get(CRYPTO_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        } finally {
+            cryptoCalls.remove(id)
+        }
+    }
+
+    /** Suspending variant for direct callers, so an IO thread is not parked while the user decides. */
+    private suspend fun cryptoAwait(action: String, params: JSONObject): String {
+        val (id, result) = requestCrypto(action, params)
+        try {
+            return withTimeoutOrNull(TimeUnit.SECONDS.toMillis(CRYPTO_TIMEOUT_SECONDS)) { result.await() }
+                ?: throw TimeoutException()
+        } finally {
+            cryptoCalls.remove(id)
+        }
+    }
+
+    fun reply(id: String, value: String?, error: String?) {
+        cryptoCalls[id]?.let {
+            if (error != null) it.completeExceptionally(IllegalStateException(error)) else it.complete(value ?: "")
+        }
+    }
+
+    fun detach() {
+        visible = false
+        cryptoCalls.values.forEach { it.completeExceptionally(IllegalStateException("Identity operation interrupted")) }
+        emit = null
+    }
+
+    @Synchronized fun pauseWhenHidden() {
+        if (visible || HubOfficeService.running) return
+        syncJob?.cancel()
+        syncJob = null
+        scope.launch {
+            gate.withLock {
+                if (!visible && !HubOfficeService.running) {
+                    val previous = engine
+                    engine = null
+                    try {
+                        previous?.shutdownAndClose()
+                    } catch (_: Exception) {
+                        lastError = "The relay connection paused. Reopen the app to reconnect."
+                    }
+                }
+            }
+        }
+    }
+
+    @Synchronized private fun stopSync() {
+        syncJob?.cancel()
+        syncJob = null
+    }
+
+    /** Called before an office command is queued: leaving the office silences alerts immediately. */
+    fun beforeCommand(action: String?, input: JSONObject?) {
+        if (action == "presence" && input?.optString("action") == "leave") HubOfficeService.stop(context)
+    }
+
+    /**
+     * After presence/ring/request commands, start or stop the voluntary office listener so it
+     * matches the new state. Only while the app is visible: the service manages itself otherwise.
+     */
+    suspend fun reconcileOfficeListener(action: String) {
+        if (action !in listOf("presence", "ring", "request") || !visible) return
+        val state = command("moo", JSONObject()) as JSONObject
+        val mode = HubAlertPolicy.listener(state, store.get("hub.account")) { store.get("hub.alerts") == "true" }
+        main.post {
+            when (mode) {
+                HubAlertPolicy.Listener.LISTEN -> HubOfficeService.start(context, false)
+                HubAlertPolicy.Listener.FOLLOW_REQUEST -> HubOfficeService.start(context, true)
+                HubAlertPolicy.Listener.STOP -> HubOfficeService.stop(context)
+            }
+        }
+    }
+
+    private fun signer(key: String) = object : ExternalAccountSignerFfi {
+        override fun publicKey() = key
+
+        override fun signEvent(unsignedEventJson: String): String {
+            val event = JSONObject(unsignedEventJson)
+            check(event.getInt("kind") !in listOf(0, 3)) { "Public profiles and contacts are disabled in BitPolito" }
+            return crypto("sign", JSONObject().put("owner", key).put("event", event))
+        }
+
+        override fun nip04Encrypt(publicKey: String, content: String): String =
+            throw IllegalStateException("Legacy encryption is not supported")
+
+        override fun nip04Decrypt(publicKey: String, encryptedContent: String): String =
+            throw IllegalStateException("Legacy encryption is not supported")
+
+        override fun nip44Encrypt(publicKey: String, content: String) =
+            crypto("encrypt", JSONObject().put("owner", key).put("pubkey", publicKey).put("content", content))
+
+        override fun nip44Decrypt(publicKey: String, payload: String) =
+            crypto("decrypt", JSONObject().put("owner", key).put("pubkey", publicKey).put("content", payload))
+    }
+
     private suspend fun kit(bootstrap:List<String> = relays):Marmot {
         engine?.let{return it}
         val deployment=marmotDeploymentNeutral().apply{keychainService="${context.packageName}.marmot"}
@@ -76,7 +195,7 @@ class HubRuntime private constructor(private val context: Context) {
         // A cached MLS account is not proof that a newly connected signer owns this Nostr identity.
         val nonce=UUID.randomUUID().toString()
         val statement=JSONObject().put("challenge",nonce).put("device",device).put("pubkey",key).toString()
-        val proof=JSONObject(crypto("sign",JSONObject().put("event",JSONObject().put("kind",30078).put("created_at",now()).put("tags",JSONArray().put(JSONArray().put("d").put("bitpolito.local-identity.v1"))).put("content",statement))))
+        val proof=JSONObject(cryptoAwait("sign",JSONObject().put("event",JSONObject().put("kind",30078).put("created_at",now()).put("tags",JSONArray().put(JSONArray().put("d").put("bitpolito.local-identity.v1"))).put("content",statement))))
         require(verifyPublicNostrEventJson(proof.toString())&&proof.getString("pubkey")==key&&proof.getInt("kind")==30078&&proof.getString("content")==statement&&kotlin.math.abs(proof.getLong("created_at")-now())<=60){"Your signer did not prove ownership of this identity"}
         // Signed invitation routes bootstrap a new phone even after the team moved away from defaults.
         val invitationRoutes=if(store.get("hub.team.$key")==null&&!invitation.isNullOrBlank())try{
@@ -108,6 +227,7 @@ class HubRuntime private constructor(private val context: Context) {
         }
         check(state.ready){"Identity setup needs attention. Check your relays and signer, then try again."}
         }
+        try { kit.catchUpAccounts() } catch (_: Exception) {}
         if(account!=key){projection=null;team=store.get("hub.team.$key")};account=key;signedOut=false
         identityName=if(name.isNotBlank())name.trim().take(60)else store.get("hub.name.$key")?:"Teammate"
         if(invitationRoutes!=null)store.put("hub.relays.$key",JSONArray(invitationRoutes).toString())
@@ -130,11 +250,23 @@ class HubRuntime private constructor(private val context: Context) {
             try{changed=p.ingest(m.plaintext,author,p.members[author]==true)||changed}catch(_:Exception){}
         }
         if(changed)store.put("hub.log.${activeAccount()}.$group",p.export())
-        val announcementKey="hub.announced.${activeAccount()}.$group"
-        val revision=roster.rosterRevision.toString()
-        if(store.get(announcementKey)!=revision){
-            val announcement=p.presenceAnnouncement(activeAccount())
-            if(announcement!=null){val receipt=kit().sendCustomEvent(activeAccount(),group,78uL,listOf(listOf("t","bitpolito.hub.v1")),announcement.toString());if(receipt.published>0u)store.put(announcementKey,revision)}else store.put(announcementKey,revision)
+        val announcementKey = "hub.announced.v2.${activeAccount()}.$group"
+        val revision = roster.rosterRevision.toString()
+        if (store.get(announcementKey) != revision) {
+            val announcements = listOfNotNull(
+                p.profileAnnouncement(activeAccount()),
+                p.presenceAnnouncement(activeAccount()),
+            )
+            val allPublished = announcements.all { announcement ->
+                kit().sendCustomEvent(
+                    activeAccount(),
+                    group,
+                    78uL,
+                    listOf(listOf("t", "bitpolito.hub.v1")),
+                    announcement.toString(),
+                ).published > 0u
+            }
+            if (allPublished) store.put(announcementKey, revision)
         }
         return p
     }
@@ -257,31 +389,66 @@ class HubRuntime private constructor(private val context: Context) {
         }
         saveRecords("applications",requests)
     }
-    @Synchronized fun startSync(){
-        if(syncJob?.isActive==true||signedOut||account==null)return
-        syncJob=scope.launch{while(isActive){
-            try{gate.withLock{
-                syncing=true
-                kit()
-                // Expiry is local and must stop office listening even with both relays offline.
-                projection?.let{HubOfficeService.update(context,it.state(activeAccount()),false)}
-                val connected=kit().accountRelayLiveness(activeAccount()).any{it.status==RelayStatusFfi.CONNECTED}
-                if(!connected)lastError="No relay connection. Updates will retry when connectivity returns."
-                else {
-                    if(visible)admissions()
-                    if(team!=null){val p=load();try{flush(p);lastError=null}catch(e:Exception){lastError=errorMessage(e)};HubOfficeService.update(context,p.state(activeAccount()))}else lastError=null
+    @Synchronized fun startSync() {
+        if (syncJob?.isActive == true || signedOut || account == null) return
+        syncJob = scope.launch {
+            var wasConnected = false
+            var ticks = 0
+            while (isActive) {
+                try {
+                    gate.withLock {
+                        syncing = true
+                        kit()
+                        // Expiry is local and must stop office listening even with both relays offline.
+                        projection?.let { HubOfficeService.update(context, it.state(activeAccount()), false) }
+                        val connected = kit().accountRelayLiveness(activeAccount()).any { it.status == RelayStatusFfi.CONNECTED }
+                        if (!connected) {
+                            lastError = "No relay connection. Updates will retry when connectivity returns."
+                        } else {
+                            if (!wasConnected || ticks % 4 == 0) {
+                                try { kit().catchUpAccounts() } catch (_: Exception) {}
+                            }
+                            if (visible) admissions()
+                            if (team != null) {
+                                val p = load()
+                                try {
+                                    flush(p)
+                                    lastError = null
+                                } catch (e: Exception) {
+                                    lastError = errorMessage(e)
+                                }
+                                HubOfficeService.update(context, p.state(activeAccount()))
+                            } else {
+                                lastError = null
+                            }
+                        }
+                        wasConnected = connected
+                        ticks++
+                        emit?.invoke("bitpolito:realtime", JSONObject())
+                    }
+                } catch (e: CancellationException) {
+                    // pauseWhenHidden()/logout cancelled the loop: not a sync failure to surface.
+                    throw e
+                } catch (e: Exception) {
+                    lastError = errorMessage(e)
+                    if (e is MarmotKitException.GroupRemoved || e is MarmotKitException.UnknownGroup ||
+                        e.message?.contains("Member access required") == true
+                    ) {
+                        HubOfficeService.stop(context)
+                    }
+                } finally {
+                    syncing = false
                 }
-                emit?.invoke("bitpolito:realtime",JSONObject())
-            }}catch(e:Exception){lastError=errorMessage(e);if((e is MarmotKitException.GroupRemoved||e is MarmotKitException.UnknownGroup||e.message?.contains("Member access required")==true))HubOfficeService.stop(context)}
-            finally{syncing=false}
-            delay(2500)
-        }}
+                delay(2500)
+            }
+        }
     }
+
     suspend fun command(action:String,input:JSONObject):Any {
         // Connection status must remain readable while an interactive signer/network call is pending.
         if(action=="status")return JSONObject().put("state",if(lastError!=null)"reconnecting" else if(syncing)"syncing" else "connected").put("error",lastError?:JSONObject.NULL).put("activity",phase)
         return gate.withLock { when(action){
-            "configuration"->JSONObject().put("transport","marmot").put("sandbox",BuildConfig.SANDBOX).put("relays",JSONArray(relays)).put("signerRelays",JSONArray(listOf("wss://nrs.primal.net"))).put("timezone","Europe/Rome").put("pushPublicKey",JSONObject.NULL)
+            "configuration"->JSONObject().put("transport","marmot").put("sandbox",BuildConfig.SANDBOX).put("relays",JSONArray(relays)).put("signerRelays",JSONArray(listOf("wss://nrs.primal.net"))).put("timezone","Europe/Rome").put("pushPublicKey",JSONObject.NULL).put("ownerPubkey",ownerPubkey?:JSONObject.NULL).put("adminPubkeys",JSONArray(configuredAdmins.toList()))
             "status"->JSONObject().put("state",if(lastError!=null)"reconnecting" else if(syncing)"syncing" else "connected").put("error",lastError?:JSONObject.NULL)
             "alertSettings"->{store.put("hub.vibration",input.optBoolean("vibration").toString());JSONObject().put("ok",true)}
             "me"->{if(account==null||signedOut)JSONObject().put("user",JSONObject.NULL)else{
@@ -289,7 +456,7 @@ class HubRuntime private constructor(private val context: Context) {
                 val user=if(team==null)fallback else try{val p=load();p.users().let{list->(0 until list.length()).map{list.getJSONObject(it)}.find{it.getString("id")==activeAccount()}}}catch(e:Exception){lastError=errorMessage(e);if((e is MarmotKitException.GroupRemoved||e is MarmotKitException.UnknownGroup||e.message?.contains("Member access required")==true)){store.put("hub.team.${activeAccount()}",null);team=null;projection=null};fallback}
                 JSONObject().put("user",user?:JSONObject.NULL)
             }}
-            "createTeam"->{check(team==null){"This device already belongs to a team"};val created=kit().createGroup(activeAccount(),"BitPolito",emptyList(),"bitpolito.hub.v1");team=requireNotNull(created.groupIdHex){"No relay accepted the new team"};store.put("hub.team.${activeAccount()}",team);projection=null;publish("profile",JSONObject().put("name",identityName).put("about",""));startSync();JSONObject().put("ok",true)}
+            "createTeam"->{check(team==null){"This device already belongs to a team"};if(configuredAdmins.isNotEmpty())check(activeAccount() in configuredAdmins){"Only the configured BitPolito owner or administrator can create the official team"};val created=kit().createGroup(activeAccount(),"BitPolito",emptyList(),"bitpolito.hub.v1");team=requireNotNull(created.groupIdHex){"No relay accepted the new team"};store.put("hub.team.${activeAccount()}",team);projection=null;publish("profile",JSONObject().put("name",identityName).put("about",""));startSync();JSONObject().put("ok",true)}
             "profile"->{identityName=input.getString("name").trim().take(60);require(identityName.isNotEmpty()){ "Enter your name" };store.put("hub.name.${activeAccount()}",identityName);if(team!=null)publish("profile",JSONObject().put("name",identityName).put("about",input.optString("about").take(500)));JSONObject().put("ok",true)}
             "deviceReadiness"->{activeAccount();check(team==null){"This phone already belongs to a team"};val routes=arrayStrings(decodeInvite(input.getString("token")).getJSONArray("relays"));JSONObject().put("otherInstallations",otherPhonePackages(routes).map{it.keyPackageId}.distinct().size)}
             "preparePhone"->{
@@ -316,7 +483,7 @@ class HubRuntime private constructor(private val context: Context) {
             "invites"->{check(load().members[activeAccount()]==true){"Administrator access required"};val rows=records("invites");JSONArray((0 until rows.length()).map{JSONObject(rows.getJSONObject(it).toString()).apply{remove("secret")}})}
             "createInvite"->{check(load().members[activeAccount()]==true){"Administrator access required"};val id=UUID.randomUUID().toString();val secret=UUID.randomUUID().toString()+UUID.randomUUID().toString();val expires=now()+7*86400
                 val descriptor=JSONObject().put("version",1).put("id",id).put("issuer",activeAccount()).put("team",team).put("expiresAt",expires).put("secret",secret).put("relays",JSONArray(kit().groupDetails(activeAccount(),team!!).group.relays))
-                val proof=crypto("sign",JSONObject().put("event",JSONObject().put("kind",30078).put("created_at",now()).put("tags",JSONArray().put(JSONArray().put("d").put("bitpolito.invite.$id"))).put("content",descriptor.toString())))
+                val proof=cryptoAwait("sign",JSONObject().put("event",JSONObject().put("kind",30078).put("created_at",now()).put("tags",JSONArray().put(JSONArray().put("d").put("bitpolito.invite.$id"))).put("content",descriptor.toString())))
                 require(verifyPublicNostrEventJson(proof)&&JSONObject(proof).getString("pubkey")==activeAccount()){"Invalid invitation signature"}
                 val rows=records("invites");rows.put(JSONObject().put("id",id).put("label",input.getString("label").take(80)).put("expiresAt",expires).put("secret",secret).put("usedAt",JSONObject.NULL).put("revokedAt",JSONObject.NULL));saveRecords("invites",rows)
                 JSONObject().put("token",Base64.encodeToString(proof.toByteArray(),Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING))}
@@ -373,9 +540,14 @@ class HubRuntime private constructor(private val context: Context) {
                             kit().removeMembers(activeAccount(),team!!,listOf(who))
                             error("More than one phone is still advertised. Ask the member to sign out on the previous phone and prepare this phone again before retrying approval.")
                         }
-                        if(request.optBoolean("restoreAdmin")&&kit().groupRoster(activeAccount(),team!!).members.none{key(it.memberIdHex)==who&&it.isAdmin})kit().promoteAdmin(activeAccount(),team!!,who)
+                        if((request.optBoolean("restoreAdmin")||who in configuredAdmins)&&kit().groupRoster(activeAccount(),team!!).members.none{key(it.memberIdHex)==who&&it.isAdmin})kit().promoteAdmin(activeAccount(),team!!,who)
                         invite.put("usedAt",now()).put("usedApplication",request.getString("id"));saveRecords("invites",invitations)
-                        publish("snapshot",JSONObject().put("profiles",JSONArray(p.profiles().values.toList())).put("resources",p.resources()),"snapshot-${request.getString("id")}")
+                        val snapshotProfiles = p.profiles().toMutableMap()
+                        val applicantName = request.optString("name").trim().take(60)
+                        if (applicantName.isNotEmpty() && !snapshotProfiles.containsKey(who)) {
+                            snapshotProfiles[who] = JSONObject().put("id", who).put("name", applicantName).put("about", "")
+                        }
+                        publish("snapshot", JSONObject().put("profiles", JSONArray(snapshotProfiles.values.toList())).put("resources", p.resources()), "snapshot-${request.getString("id")}")
                         request.put("status","approved");saveRecords("applications",rows)
                     }else{
                         check(request.optString("phase").isBlank()){"Approval is already in progress. Finish it before changing this request."}
@@ -386,10 +558,10 @@ class HubRuntime private constructor(private val context: Context) {
                 }
                 JSONObject().put("ok",true)
             }
-            "setRole"->{val p=load();check(p.members[activeAccount()]==true){"Administrator access required"};val id=input.getString("id");val role=input.getString("role");if(role=="follower"&&!p.members.containsKey(id))return@withLock JSONObject().put("ok",true);check(p.members.containsKey(id)){"Member not found"};if((role=="admin"&&p.members[id]==true)||(role=="member"&&p.members[id]==false))return@withLock JSONObject().put("ok",true);check(!(p.members[id]==true&&role!="admin"&&p.members.values.count{it}==1)){"The last administrator cannot be removed"};when(role){"admin"->kit().promoteAdmin(activeAccount(),team!!,id);"member"->if(id==activeAccount())kit().selfDemoteAdmin(activeAccount(),team!!)else kit().demoteAdmin(activeAccount(),team!!,id);"follower"->if(id==activeAccount())kit().leaveGroup(activeAccount(),team!!)else kit().removeMembers(activeAccount(),team!!,listOf(id));else->error("Unknown role")};JSONObject().put("ok",true)}
+            "setRole"->{val p=load();check(p.members[activeAccount()]==true){"Administrator access required"};val id=input.getString("id");val role=input.getString("role");if(ownerPubkey!=null&&id==ownerPubkey&&role!="admin")error("The team owner cannot be demoted or removed");if(role=="follower"&&!p.members.containsKey(id))return@withLock JSONObject().put("ok",true);check(p.members.containsKey(id)){"Member not found"};if((role=="admin"&&p.members[id]==true)||(role=="member"&&p.members[id]==false))return@withLock JSONObject().put("ok",true);check(!(p.members[id]==true&&role!="admin"&&p.members.values.count{it}==1)){"The last administrator cannot be removed"};when(role){"admin"->kit().promoteAdmin(activeAccount(),team!!,id);"member"->if(id==activeAccount())kit().selfDemoteAdmin(activeAccount(),team!!)else kit().demoteAdmin(activeAccount(),team!!,id);"follower"->if(id==activeAccount())kit().leaveGroup(activeAccount(),team!!)else kit().removeMembers(activeAccount(),team!!,listOf(id));else->error("Unknown role")};JSONObject().put("ok",true)}
             "logout"->{
                 phase="signing out"
-                syncJob?.cancel();syncJob=null;HubOfficeService.stop(context)
+                stopSync();HubOfficeService.stop(context)
                 try{account?.let{engine?.signOut(it,false)}}finally{signedOut=true;store.put("hub.signedOut","true");cryptoCalls.values.forEach{it.completeExceptionally(IllegalStateException("Signed out"))}}
                 phase="idle";JSONObject().put("ok",true)
             }
@@ -397,6 +569,9 @@ class HubRuntime private constructor(private val context: Context) {
         } }
     }
     companion object {
+        /** How long a signer prompt may wait for the user before the operation fails. */
+        private const val CRYPTO_TIMEOUT_SECONDS = 90L
+
         fun errorMessage(error:Throwable,fallback:String="Could not synchronize your team. Check your relays and try again."):String {
             val cause=error.cause?:error
             return when(cause.javaClass.simpleName){

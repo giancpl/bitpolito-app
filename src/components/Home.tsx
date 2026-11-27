@@ -1,73 +1,72 @@
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { Empty, ErrorState, ExpandableText, ExternalLink, Loading } from "./ui";
-import type { Resource } from "../../shared/contracts";
-export function ResourcesPage() {
-  const query = useQuery({
-    queryKey: ["resources"],
-    queryFn: () => api<Resource[]>("/resources"),
-  });
+import { ArrowUpRight } from "lucide-react";
+import { useIdentity } from "../lib/identity";
+import { useResources } from "../lib/queries";
+import { modules } from "../modules/registry";
+import { Button } from "./ui";
+
+/**
+ * Platform Home dashboard.
+ * Renders the user greeting, each registered module's live HomeWidget,
+ * and quick-launch tiles combining first-party modules and active team tools.
+ */
+export function HomePage() {
+  const { user } = useIdentity();
+  const resources = useResources(true);
+  if (!user) return null;
+
+  const catalogueLimit = Math.max(0, 4 - modules.length);
+  const catalogueTools =
+    resources.data?.filter((r) => r.status === "active").slice(0, catalogueLimit) ?? [];
+
   return (
-    <>
-      <div className="page-intro">
+    <div className="office-page team-home">
+      <div className="home-heading">
         <div>
-          <h1>
-            Tools<span>.</span>
-          </h1>
-          <p>Your BitPolito toolkit.</p>
+          <p className="eyebrow">Your team, together</p>
+          <h1 tabIndex={-1}>Hi, {user.name || "teammate"}.</h1>
         </div>
+        <span className="brand-badge" aria-hidden="true">
+          <img src="/brand/cow-icon-blue.svg" alt="" />
+        </span>
       </div>
-      <Link className="tool-office-link" to="/office"><img src="/brand/icon-bell.svg" alt=""/><span><strong>Office</strong><small>Presence & doorbell</small></span><span aria-hidden="true">→</span></Link>
-      {query.isLoading ? (
-        <Loading />
-      ) : query.error ? (
-        <ErrorState error={query.error} retry={() => void query.refetch()} />
-      ) : (
-        ["tool", "resource"].map((type) => {
-          const items =
-            query.data?.filter(
-              (r) => r.type === type && r.status === "active",
-            ) || [];
-          return (
-            <section className="resource-section" key={type}>
-              <div className="section-heading">
-                <h2>{type === "tool" ? "Tools" : "Resources"}</h2>
-                <span className="pill">{items.length}</span>
-              </div>
-              {items.length ? (
-                <div className="resource-grid">
-                  {items.map((item) => (
-                    <article className="resource-card" key={item.id}>
-                      <div className="resource-icon">
-                        <img src={`/brand/${item.icon}`} alt="" />
-                      </div>
-                      <span className="small muted">{item.category}</span>
-                      <h3>{item.title}</h3>
-                      <ExpandableText text={item.description} />
-                      <ExternalLink href={item.url} className="text-button">
-                        {type === "tool" ? "Open tool" : "Open resource"}
-                      </ExternalLink>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <Empty
-                  title={
-                    type === "tool"
-                      ? "More tools are on the way."
-                      : "A little room for good resources."
-                  }
-                >
-                  The team will add useful links here.
-                </Empty>
-              )}
-            </section>
-          );
-        })
-      )}
-    </>
+
+      {modules.map((mod) => (mod.HomeWidget ? <mod.HomeWidget key={mod.id} /> : null))}
+
+      <section className="home-tools">
+        <div className="section-heading">
+          <h2>Your tools</h2>
+          <Link to="/resources" className="text-button">
+            View all
+            <ArrowUpRight size={16} />
+          </Link>
+        </div>
+        <div className="quick-tool-grid">
+          {modules.map((mod) => (
+            <Link className="quick-tool" key={mod.id} to={mod.route}>
+              <span className="quick-tool-icon" aria-hidden="true">
+                <img src={`/brand/${mod.icon}`} alt="" />
+              </span>
+              <strong>{mod.title}</strong>
+              <span>{mod.subtitle}</span>
+            </Link>
+          ))}
+          {catalogueTools.map((r) => (
+            <a className="quick-tool" key={r.id} href={r.url} target="_blank" rel="noreferrer">
+              <span className="quick-tool-icon" aria-hidden="true">
+                <img src={`/brand/${r.icon}`} alt="" />
+              </span>
+              <strong>{r.title}</strong>
+              <span>{r.category}</span>
+            </a>
+          ))}
+        </div>
+        {resources.isError && (
+          <Button variant="ghost" onClick={() => void resources.refetch()}>
+            Retry tools
+          </Button>
+        )}
+      </section>
+    </div>
   );
 }
-
-export { OfficePage as HomePage } from "./Moo";
