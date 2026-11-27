@@ -275,6 +275,8 @@ small {
 }
 
 .bottom-nav a {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -287,9 +289,21 @@ small {
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
-  transition:
-    background 0.16s,
-    color 0.16s;
+  transition: color 0.18s ease;
+}
+
+.bottom-nav a > svg,
+.bottom-nav a > span:not(.nav-pill) {
+  position: relative;
+  z-index: 1;
+}
+
+.nav-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--blue-soft) 0%, var(--blue-mist) 100%);
+  z-index: 0;
 }
 
 .bottom-nav a:hover {
@@ -297,8 +311,11 @@ small {
 }
 
 .bottom-nav a.active {
-  background: linear-gradient(135deg, var(--blue-soft) 0%, var(--blue-mist) 100%);
   color: var(--blue);
+}
+
+.page-transition {
+  min-width: 0;
 }
 
 /* ---------------------------------------------------------------------------
@@ -493,7 +510,18 @@ small {
 
 .status-in .status-dot {
   background: var(--success);
-  box-shadow: 0 0 0 4px rgba(15, 122, 83, 0.14);
+  box-shadow: 0 0 0 4px rgba(15, 122, 83, 0.16);
+  animation: status-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(15, 122, 83, 0.18);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(15, 122, 83, 0.04);
+  }
 }
 
 .pill {
@@ -517,7 +545,8 @@ small {
    Home & Office
    ------------------------------------------------------------------------- */
 
-.office-page {
+.office-page,
+.module-widget {
   display: grid;
   gap: 16px;
 }
@@ -588,6 +617,9 @@ small {
   border-radius: 16px;
   border: 1px solid var(--line);
   background: var(--surface-2);
+  transition:
+    background 0.22s ease,
+    border-color 0.22s ease;
 }
 
 .presence-bar.is-inside {
@@ -625,6 +657,11 @@ small {
 
 .people-summary > svg {
   color: var(--muted);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.people-summary:hover > svg {
+  transform: translateX(3px);
 }
 
 .people-summary > .avatar-group {
@@ -704,6 +741,11 @@ small {
 .quick-tool:hover {
   border-color: var(--accent-line);
   box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.quick-tool:hover .quick-tool-icon {
+  background: var(--blue-mist);
 }
 
 .quick-tool-icon {
@@ -714,6 +756,7 @@ small {
   display: grid;
   place-items: center;
   padding: 8px;
+  transition: background 0.18s ease;
 }
 
 .quick-tool-icon img {
@@ -801,6 +844,28 @@ small {
   margin-bottom: 16px;
   color: var(--blue);
   min-height: 64px;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.16s ease;
+}
+
+.moo-banner:hover {
+  border-color: var(--blue);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.moo-banner:active {
+  transform: scale(0.985);
+}
+
+.moo-banner > svg {
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.moo-banner:hover > svg {
+  transform: translateX(3px);
 }
 
 .moo-banner > span:nth-child(2) {
@@ -924,12 +989,17 @@ small {
    Tools & Resources
    ------------------------------------------------------------------------- */
 
+.module-links {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
 .tool-office-link {
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 16px 18px;
-  margin-bottom: 24px;
   background: var(--gradient-card);
   border: 1px solid var(--accent-line);
   border-radius: 20px;
@@ -944,6 +1014,15 @@ small {
 .tool-office-link:hover {
   border-color: var(--blue);
   box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.tool-office-link > svg {
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tool-office-link:hover > svg {
+  transform: translateX(3px);
 }
 
 .tool-office-link > span:first-of-type {
@@ -980,12 +1059,14 @@ small {
   min-width: 0;
   transition:
     border-color 0.18s,
-    box-shadow 0.18s;
+    box-shadow 0.18s,
+    transform 0.16s;
 }
 
 .resource-card:hover {
   border-color: var(--accent-line);
   box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .resource-card h3 {
@@ -1159,6 +1240,11 @@ small {
   color: var(--muted);
   font-size: 22px;
   line-height: 1;
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.settings-row:hover .settings-chevron {
+  transform: translateX(3px);
 }
 
 .recovery-content {
